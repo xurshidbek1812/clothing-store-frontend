@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Store {
+  id        String    @id @default(uuid())
+  name      String
+  address   String?
+  users     User[]
+  products  Product[]
+  incomes   Income[]
+  cashboxes Cashbox[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  transfers Transfer[]
+  sales     Sale[]
+  expenses Expense[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  username  String   @unique
+  phone     String   @unique
+  password  String
+  role      Role     @default(SELLER)
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Product {
+  id        String     @id @default(uuid())
+  name      String
+  sku       String     @unique
+  price     Decimal
+  color     String?
+  size      String?
+  stock     Int        @default(0)
+  storeId   String
+  store     Store      @relation(fields: [storeId], references: [id])
+  incomes   Income[]
+  saleItems SaleItem[]
+}
+
+model Sale {
+  id          String     @id @default(uuid())
+  totalAmount Float // Umumiy savdo summasi
+  paymentType String // "NAQD" yoki "PLASTIK"
+  cashboxId   String // Pul qaysi kassaga tushdi
+  date        DateTime   @default(now())
+  storeId     String
+  store       Store      @relation(fields: [storeId], references: [id])
+  cashbox     Cashbox    @relation(fields: [cashboxId], references: [id])
+  items       SaleItem[]
+}
+
+model SaleItem {
+  id        String  @id @default(uuid())
+  saleId    String
+  productId String
+  quantity  Int // Nechta sotildi
+  price     Float // Sotilgan vaqtdagi narxi
+  sale      Sale    @relation(fields: [saleId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Income {
+  id        String   @id @default(uuid())
+  quantity  Int
+  costPrice Decimal
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+  date      DateTime @default(now())
+}
+
+model Cashbox {
+  id      String  @id @default(uuid())
+  name    String
+  balance Decimal @default(0)
+  storeId String
+  store   Store   @relation(fields: [storeId], references: [id])
+
+  sales Sale[]
+  expenses Expense[]
+
+  transfersFrom Transfer[] @relation("FromCashbox")
+  transfersTo   Transfer[] @relation("ToCashbox")
+}
+
+model Transfer {
+  id            String   @id @default(uuid())
+  amount        Float // O'tkazma summasi
+  fromCashboxId String // Qaysi kassadan chiqdi
+  toCashboxId   String // Qaysi kassaga tushdi
+  description   String? // Izoh (masalan: "Inkasatsiya")
+  date          DateTime @default(now())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id])
+
+  // Kassalar bilan bog'liqlik
+  fromCashbox Cashbox @relation("FromCashbox", fields: [fromCashboxId], references: [id])
+  toCashbox   Cashbox @relation("ToCashbox", fields: [toCashboxId], references: [id])
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  SELLER
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  amount      Float    // Xarajat summasi
+  description String   // Nima uchun (masalan: "Ijara puli")
+  date        DateTime @default(now())
+  
+  cashboxId   String
+  cashbox     Cashbox  @relation(fields: [cashboxId], references: [id])
+  
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id])
+}
