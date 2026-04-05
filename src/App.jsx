@@ -1,81 +1,72 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+
+// Asosiy qismlar
+import Layout from './components/Layout';
+import Login from './pages/Login';
+import Settings from './pages/Settings';
+import Pos from './pages/pos/Pos';
+
 import { Toaster } from 'react-hot-toast';
 
-import Sidebar from './components/Sidebar';
-import AnimatedPage from './components/AnimatedPage';
-import Loader from './components/Loader'; // Kutib turish uchun o'zimizning chiroyli loader
+// ==========================================
+// VAQTINCHALIK SAHIFALAR (Keyin har birini alohida yozamiz)
+// ==========================================
+const Dashboard = () => <div className="p-8 text-3xl font-black text-slate-800">📊 Bosh sahifa (Tez kunda...)</div>;
+const Credits = () => <div className="p-8 text-3xl font-black text-slate-800">👥 Nasiya savdolar ro'yxati</div>;
+const Returns = () => <div className="p-8 text-3xl font-black text-slate-800">🔄 Tovar qaytarish oynasi</div>;
 
-// SAHIFALARNI LAZY (Yalqov) USULDA YUKLAYMIZ
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Login = lazy(() => import('./pages/Login'));
-const Products = lazy(() => import('./pages/Products'));
-const Incomes = lazy(() => import('./pages/Incomes'));
-const Cashboxes = lazy(() => import('./pages/Cashboxes'));
-const Transfers = lazy(() => import('./pages/Transfers'));
-const Expenses = lazy(() => import('./pages/Expenses'));
-const Sales = lazy(() => import('./pages/Sales'));
-const SalesHistory = lazy(() => import('./pages/SalesHistory'));
-const Settings = lazy(() => import('./pages/Settings'));
+const InventoryIn = () => <div className="p-8 text-3xl font-black text-slate-800">📦 Taminotchidan tovar kirimi</div>;
+const InventoryStock = () => <div className="p-8 text-3xl font-black text-slate-800">📋 Ombor qoldig'i (Barcha tovarlar)</div>;
+const Transfers = () => <div className="p-8 text-3xl font-black text-slate-800">🚚 Omborlararo o'tkazmalar</div>;
 
-function MainLayout() {
-  const location = useLocation();
-  const isLoginPage = location.pathname === '/login';
+const Finance = () => <div className="p-8 text-3xl font-black text-slate-800">💵 Kassa amaliyotlari (Kirim/Chiqim)</div>;
+const Currency = () => <div className="p-8 text-3xl font-black text-slate-800">💱 Valyutalar va Kurslarni boshqarish</div>;
 
-  return (
-    <div className="font-sans text-gray-900 bg-pattern min-h-screen flex overflow-hidden">
-      {!isLoginPage && <Sidebar />}
-      
-      <div className={`flex-1 h-screen overflow-y-auto ${!isLoginPage ? 'ml-64' : ''}`}>
-        <AnimatePresence mode="wait">
-          {/* Suspense: Sahifa yuklanguncha Loaderni aylantirib turadi */}
-          <Suspense fallback={<div className="h-full flex items-center justify-center"><Loader /></div>}>
-            <Routes location={location} key={location.pathname}>
-              <Route path="/" element={<AnimatedPage><Dashboard /></AnimatedPage>} />
-              <Route path="/login" element={<AnimatedPage><Login /></AnimatedPage>} />
-              <Route path="/products" element={<AnimatedPage><Products /></AnimatedPage>} />
-              <Route path="/incomes" element={<AnimatedPage><Incomes /></AnimatedPage>} />
-              <Route path="/cashboxes" element={<AnimatedPage><Cashboxes /></AnimatedPage>} />
-              <Route path="/transfers" element={<AnimatedPage><Transfers /></AnimatedPage>} />
-              <Route path="/expenses" element={<AnimatedPage><Expenses /></AnimatedPage>} />
-              <Route path="/sales" element={<AnimatedPage><Sales /></AnimatedPage>} />
-              <Route path="/sales-history" element={<AnimatedPage><SalesHistory /></AnimatedPage>} />
-              <Route path="/settings" element={<AnimatedPage><Settings /></AnimatedPage>} />
-            </Routes>
-          </Suspense>
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}
+const PrintLabels = () => <div className="p-8 text-3xl font-black text-slate-800">🖨️ Narx yorliqlari (Shtrixkod) chop etish</div>;
+const Reports = () => <div className="p-8 text-3xl font-black text-slate-800">📈 Tahliliy Hisobotlar</div>;
+const Catalogs = () => <div className="p-8 text-3xl font-black text-slate-800">📚 Kataloglar (Tovarlar, Kategoriyalar)</div>;
 
 function App() {
   return (
     <Router>
-      {/* Toast xabarlari chiqadigan joyni sozlaymiz */}
-      <Toaster 
-        position="top-right" 
-        toastOptions={{
-          duration: 3000,
-          style: {
-            background: '#333',
-            color: '#fff',
-            borderRadius: '16px',
-            padding: '16px',
-            fontWeight: 'bold'
-          },
-          success: {
-            style: { background: '#10b981', color: 'white' },
-            iconTheme: { primary: 'white', secondary: '#10b981' },
-          },
-          error: {
-            style: { background: '#ef4444', color: 'white' },
-            iconTheme: { primary: 'white', secondary: '#ef4444' },
-          },
-        }} 
-      />
-      <MainLayout />
+      <Toaster position="top-right" reverseOrder={false} />
+      <Routes>
+        {/* 1. OCHIQ YO'L (Faqat Login uchun) */}
+        <Route path="/login" element={<Login />} />
+
+        {/* 2. HIMOYALANGAN YO'LLAR (Layout qobig'i ichida ochiladi) */}
+        <Route path="/" element={<Layout />}>
+          
+          {/* Asosiy sahifa (Layout ni o'ziga kirsangiz shu chiqadi) */}
+          <Route index element={<Dashboard />} />
+          
+          {/* Savdo */}
+          <Route path="pos" element={<Pos />} />
+          <Route path="credits" element={<Credits />} />
+          <Route path="returns" element={<Returns />} />
+          
+          {/* Ombor */}
+          <Route path="inventory/in" element={<InventoryIn />} />
+          <Route path="inventory/stock" element={<InventoryStock />} />
+          <Route path="inventory/transfers" element={<Transfers />} />
+          
+          {/* Moliya */}
+          <Route path="finance" element={<Finance />} />
+          <Route path="finance/currency" element={<Currency />} />
+          
+          {/* Boshqalar */}
+          <Route path="print-labels" element={<PrintLabels />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="catalogs" element={<Catalogs />} />
+          
+          {/* Sozlamalar (Biz buning kodini to'liq yozganmiz) */}
+          <Route path="settings" element={<Settings />} />
+          
+        </Route>
+
+        {/* 3. XATO YO'L (Boshqa yozuv yozib kirsa, Asosiyga otib yuboradi) */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </Router>
   );
 }

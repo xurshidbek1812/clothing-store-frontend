@@ -1,15 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { motion } from 'framer-motion';
-import { User, Lock, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { User, Lock, ArrowRight, Loader2, Sparkles, Store } from 'lucide-react';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
+  
+  // Do'kon tanlash modali uchun statelar
+  const [showStoreModal, setShowStoreModal] = useState(false);
+  const [userStores, setUserStores] = useState([]);
+  const [tempToken, setTempToken] = useState(null);
+  const [tempUserData, setTempUserData] = useState(null);
 
+  const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL;
 
   const handleLogin = async (e) => {
@@ -17,19 +23,34 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      // API_URL kerak emas, shunchaki qisqa manzilni yozamiz:
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }), // serverga username ketadi
+        body: JSON.stringify({ username, password }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        toast.success(`Xush kelibsiz, ${data.user.name}! 🎉`);
-        navigate('/');
+        const stores = data.user.stores;
+
+        if (!stores || stores.length === 0) {
+          toast.error("Sizga hech qanday do'kon biriktirilmagan. Adminga murojaat qiling!");
+          return;
+        }
+
+        // Agar faqat bitta do'kon bo'lsa - avtomatik kirib ketadi
+        if (stores.length === 1) {
+          finishLogin(data.token, data.user, stores[0]);
+        } 
+        // Agar ko'p do'kon bo'lsa - Modalni ochamiz va ma'lumotlarni vaqtincha saqlab turamiz
+        else {
+          setUserStores(stores);
+          setTempToken(data.token);
+          setTempUserData(data.user);
+          setShowStoreModal(true);
+        }
       } else {
         toast.error(data.message || "Username yoki parol noto'g'ri");
       }
@@ -38,6 +59,16 @@ const Login = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Do'kon tanlangandan keyin tizimga kirishni yakunlash funksiyasi
+  const finishLogin = (token, user, selectedStore) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('currentStore', JSON.stringify(selectedStore)); // <--- ASOSIY QISM: Hozirgi do'konni xotiraga saqlaymiz
+
+    toast.success(`Xush kelibsiz, ${user.name}! 🎉`);
+    navigate('/');
   };
 
   return (
@@ -80,8 +111,6 @@ const Login = () => {
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
-            
-            {/* Username inputi */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Foydalanuvchi nomi</label>
               <div className="relative group">
@@ -90,7 +119,7 @@ const Login = () => {
                 </div>
                 <input 
                   type="text" 
-                  placeholder="masalan: admin_123"
+                  placeholder="masalan: admin"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-slate-900/50 border border-slate-700/50 text-white placeholder-slate-500 rounded-2xl py-4 pl-12 pr-4 outline-none focus:bg-slate-900/80 focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all"
@@ -99,7 +128,6 @@ const Login = () => {
               </div>
             </div>
 
-            {/* Parol inputi */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Maxfiy parol</label>
               <div className="relative group">
@@ -136,10 +164,46 @@ const Login = () => {
                 </>
               )}
             </motion.button>
-            
           </form>
         </div>
       </motion.div>
+
+      {/* DO'KON TANLASH MODALI */}
+      <AnimatePresence>
+        {showStoreModal && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl"
+            >
+              <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-6 mx-auto">
+                <Store size={32} className="text-blue-600" />
+              </div>
+              <h3 className="text-2xl font-black text-center text-slate-800 mb-2">Do'konni tanlang</h3>
+              <p className="text-center text-slate-500 mb-8 font-medium">Sizga bir nechta filiallarga ruxsat berilgan. Hozir qaysi birida ishlaysiz?</p>
+              
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                {userStores.map(store => (
+                  <button 
+                    key={store.id}
+                    onClick={() => finishLogin(tempToken, tempUserData, store)}
+                    className="w-full bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 text-left p-4 rounded-2xl transition-all group flex items-center justify-between"
+                  >
+                    <div>
+                      <h4 className="font-bold text-slate-800 group-hover:text-blue-700">{store.name}</h4>
+                      {store.address && <p className="text-xs text-slate-400 mt-1">{store.address}</p>}
+                    </div>
+                    <ArrowRight size={18} className="text-slate-300 group-hover:text-blue-600 transform group-hover:translate-x-1 transition-all" />
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 };

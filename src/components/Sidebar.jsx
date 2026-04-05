@@ -1,150 +1,158 @@
-import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-// Ikonkalarni import qilamiz
+import React, { useState } from 'react';
 import { 
-  LayoutDashboard, 
-  Package, 
-  Shirt, 
-  ArrowDownLeft, 
+  Home, 
   Wallet, 
-  Banknote, 
-  ArrowRightLeft, 
-  LogOut,
+  ShoppingCart, 
+  Package, 
+  Users, 
+  Tag, 
+  PieChart, 
+  BookOpen, 
+  Settings,
   ChevronDown,
-  ShoppingCart,
-  FileText,
-  ReceiptText,
-  Settings as SettingsIcon
+  ChevronRight
 } from 'lucide-react';
 
+const menuItems = [
+  { title: "Bosh sahifa", icon: <Home size={20} />, path: "/" },
+  { 
+    title: "Kassa", 
+    icon: <Wallet size={20} />, 
+    children: [
+      { title: "Boshqa kassaga chiqim", path: "/kassa/chiqim" },
+      { title: "Boshqa kassadan kirim", path: "/kassa/kirim" },
+      { title: "Xarajatga pul chiqim", path: "/kassa/xarajat" },
+      { title: "Barcha kassa amaliyotlari", path: "/kassa/barcha" },
+      { title: "Kassalarni boshqarish", path: "/kassa/boshqarish" },
+      { title: "Kassalar qoldig'i", path: "/kassa/qoldiq" },
+      { title: "Valyuta ayriboshlash", path: "/kassa/ayriboshlash" }
+    ]
+  },
+  { 
+    title: "Savdo", 
+    icon: <ShoppingCart size={20} />, 
+    children: [
+      { title: "Naqd savdo", path: "/savdo/naqd" },
+      { title: "Nasiya savdo", path: "/savdo/nasiya" },
+      { title: "Tovar qaytarish", path: "/savdo/qaytarish" }
+    ]
+  },
+  { 
+    title: "Ombor", 
+    icon: <Package size={20} />, 
+    children: [
+      { title: "Barcha ombor amaliyotlari", path: "/ombor/barcha" },
+      { title: "Boshqa ombordan kirim", path: "/ombor/boshqa-kirim" },
+      { title: "Boshqa omborga chiqim", path: "/ombor/boshqa-chiqim" },
+      { title: "Taminotchidan tovar kirimi", path: "/ombor/taminotchi-kirim" },
+      { title: "Taminotchiga tovar qaytarish", path: "/ombor/taminotchi-qaytarish" },
+      { title: "Mijozdan tovar kirimi", path: "/ombor/mijoz-kirim" },
+      { title: "Tovar qoldig'i", path: "/ombor/qoldiq" },
+      { title: "Sanoq", path: "/ombor/sanoq" },
+      { title: "Sanoq tarixi", path: "/ombor/sanoq-tarixi" }
+    ]
+  },
+  { 
+    title: "Hisob-kitoblar", 
+    icon: <Users size={20} />, 
+    children: [
+      { title: "Taminotchilar ro'yxati", path: "/hisob/taminotchilar" },
+      { title: "Taminotchilar hisob-kitob", path: "/hisob/taminotchi-hisob" }
+    ]
+  },
+  { 
+    title: "Narx yorlig'i", 
+    icon: <Tag size={20} />, 
+    children: [
+      { title: "Narx yorlig'i chop etish", path: "/narx/chop-etish" }
+    ]
+  },
+  { 
+    title: "Hisobotlar", 
+    icon: <PieChart size={20} />, 
+    children: [
+      { title: "Hisobotlar ro'yxati", path: "/hisobotlar/royxat" }
+    ]
+  },
+  { 
+    title: "Ma'lumotnomalar", 
+    icon: <BookOpen size={20} />, 
+    children: [
+      { title: "Kategoriyalar", path: "/malumotlar/kategoriyalar" },
+      { title: "Xarajat moddalari", path: "/malumotlar/xarajat-moddalari" },
+      { title: "Razmerlar", path: "/malumotlar/razmerlar" },
+      { title: "Valyutalar", path: "/malumotlar/valyutalar" }
+    ]
+  },
+  { 
+    title: "Sozlamalar", 
+    icon: <Settings size={20} />, 
+    children: [
+      { title: "Profil sozlamalari", path: "/sozlamalar/profil" },
+      { title: "Xodimlar boshqaruvi", path: "/sozlamalar/xodimlar" }
+    ]
+  }
+];
+
 const Sidebar = () => {
-  const location = useLocation();
-  const [openGroup, setOpenGroup] = useState('ombor');
+  const [openMenus, setOpenMenus] = useState({});
 
-  const isActive = (path) => location.pathname === path 
-    ? "bg-blue-600 text-white font-medium shadow-lg shadow-blue-900/20" 
-    : "text-gray-400 hover:bg-gray-800 hover:text-white font-medium";
-
-  const toggleGroup = (groupName) => {
-    setOpenGroup(openGroup === groupName ? '' : groupName);
+  const toggleMenu = (title) => {
+    setOpenMenus((prev) => ({
+      ...prev,
+      [title]: !prev[title]
+    }));
   };
 
   return (
-    <div className="w-64 bg-[#0f172a] min-h-screen fixed left-0 top-0 flex flex-col shadow-2xl z-50 select-none">
-      {/* Logotip qismi */}
-      <div className="p-6 border-b border-slate-800/50">
-        <h2 className="text-2xl font-black text-white tracking-tighter flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <ShoppingCart size={20} strokeWidth={3} />
-          </div>
-          <span>IPHONE <span className="text-blue-500 text-lg">HOUSE</span></span>
-        </h2>
+    <div className="w-72 h-screen bg-gray-900 text-gray-100 overflow-y-auto flex flex-col shadow-xl">
+      {/* Logo Qismi */}
+      <div className="p-6 flex items-center justify-center border-b border-gray-800">
+        <h1 className="text-2xl font-bold tracking-wider text-blue-400">ERP TIZIM</h1>
       </div>
 
-      <div className="flex-1 py-6 flex flex-col gap-2 px-4 overflow-y-auto custom-scrollbar">
-        
-        {/* ASOSIY */}
-        <Link to="/" className={`px-4 py-3 rounded-xl transition-all duration-300 flex items-center gap-3 ${isActive('/')}`}>
-          <LayoutDashboard size={20} />
-          <span className="text-sm">Asosiy panel</span>
-        </Link>
-
-        {/* OMBOR GURUHI */}
-        <div className="mt-2">
-          <button 
-            onClick={() => toggleGroup('ombor')} 
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <Package size={20} />
-              <span className="text-sm font-semibold">Ombor boshqaruvi</span>
-            </div>
-            <ChevronDown size={16} className={`transition-transform duration-300 ${openGroup === 'ombor' ? 'rotate-180' : ''}`} />
-          </button>
-          
-          {openGroup === 'ombor' && (
-            <div className="pl-10 pr-2 mt-1 flex flex-col gap-1">
-              <Link to="/products" className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs transition-all ${isActive('/products')}`}>
-                <Shirt size={14} /> Tovarlar
-              </Link>
-              <Link to="/incomes" className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs transition-all ${isActive('/incomes')}`}>
-                <ArrowDownLeft size={14} /> Kirimlar
-              </Link>
-            </div>
-          )}
-        </div>
-
-        {/* SAVDO GURUHI */}
-        <div className="mt-2">
-          <button 
-            onClick={() => toggleGroup('savdo')} 
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <ShoppingCart size={20} />
-              <span className="text-sm font-semibold">Savdo bo'limi</span>
-            </div>
-            <ChevronDown size={16} className={`transition-transform duration-300 ${openGroup === 'savdo' ? 'rotate-180' : ''}`} />
-          </button>
-          
-          {openGroup === 'savdo' && (
-            <div className="pl-10 pr-2 mt-1 flex flex-col gap-1">
-              <Link to="/sales" className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs transition-all ${isActive('/sales')}`}>
-                <ShoppingCart size={14} /> Savdo terminali
-              </Link>
-              <Link to="/sales-history" className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs transition-all ${isActive('/sales-history')}`}>
-                <FileText size={14} /> Sotuvlar tarixi
-              </Link>
-            </div>
-          )}
-        </div>
-
-        {/* KASSA GURUHI */}
-        <div>
-          <button 
-            onClick={() => toggleGroup('kassa')} 
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <Wallet size={20} />
-              <span className="text-sm font-semibold">Moliya bo'limi</span>
-            </div>
-            <ChevronDown size={16} className={`transition-transform duration-300 ${openGroup === 'kassa' ? 'rotate-180' : ''}`} />
-          </button>
-          
-          {openGroup === 'kassa' && (
-            <div className="pl-10 pr-2 mt-1 flex flex-col gap-1">
-              <Link to="/cashboxes" className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs transition-all ${isActive('/cashboxes')}`}>
-                <Banknote size={14} /> Kassalar
-              </Link>
-              <Link to="/transfers" className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs transition-all ${isActive('/transfers')}`}>
-                <ArrowRightLeft size={14} /> O'tkazmalar
-              </Link>
+      {/* Menyu */}
+      <nav className="flex-1 px-4 py-6 space-y-2">
+        {menuItems.map((item, index) => (
+          <div key={index}>
+            {/* Asosiy Menyu Elementi */}
+            <button
+              onClick={() => item.children ? toggleMenu(item.title) : null}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 ${
+                openMenus[item.title] ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <span className="text-blue-400">{item.icon}</span>
+                <span className="font-medium">{item.title}</span>
+              </div>
               
-              {/* MANA SHU YANGI QATORNI QO'SHING */}
-              <Link to="/expenses" className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs transition-all ${isActive('/expenses')}`}>
-                <ReceiptText size={14} /> Xarajatlar
-              </Link>
-            </div>
-          )}
-        </div>
+              {/* Chevron icon (faqat children bo'lsa) */}
+              {item.children && (
+                <span className="text-gray-500">
+                  {openMenus[item.title] ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                </span>
+              )}
+            </button>
 
-      </div>
-
-      <div className="px-4 mt-4 border-t border-slate-800/50 pt-4">
-        <Link to="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/settings')}`}>
-          <SettingsIcon size={20} />
-          <span className="text-sm font-semibold">Sozlamalar</span>
-        </Link>
-      </div>
-
-      {/* CHIQISH */}
-      <div className="p-4 border-t border-slate-800/50">
-        <button className="w-full bg-red-500/5 text-red-500 hover:bg-red-500 hover:text-white px-4 py-3 rounded-xl transition-all duration-300 flex items-center gap-3 text-sm font-bold">
-          <LogOut size={18} />
-          Tizimdan chiqish
-        </button>
-      </div>
+            {/* Sub-menyu Elementlari */}
+            {item.children && openMenus[item.title] && (
+              <ul className="mt-1 ml-4 pl-4 border-l border-gray-700 space-y-1">
+                {item.children.map((subItem, subIndex) => (
+                  <li key={subIndex}>
+                    <a
+                      href={subItem.path}
+                      className="block px-4 py-2 text-sm text-gray-400 rounded-lg hover:text-white hover:bg-gray-800 transition-colors"
+                    >
+                      {subItem.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </nav>
     </div>
   );
 };
