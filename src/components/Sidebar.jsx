@@ -34,6 +34,7 @@ const menuItems = [
     children: [
       { title: "Naqd savdo", path: "/savdo/naqd" },
       { title: "Nasiya savdo", path: "/savdo/nasiya" },
+      { title: "Savdolar tarixi", path: "/sales/history" },
       { title: "Tovar qaytarish", path: "/savdo/qaytarish" }
     ]
   },

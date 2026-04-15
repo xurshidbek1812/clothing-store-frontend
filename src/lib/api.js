@@ -1,30 +1,36 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+export async function apiFetch(path, options = {}) {
+  const raw = localStorage.getItem('clothing_shop_auth');
+  const auth = raw ? JSON.parse(raw) : null;
 
-const buildHeaders = (options = {}) => {
-  const token = localStorage.getItem('token');
-  const activeStoreId = localStorage.getItem('activeStoreId');
+  const token = auth?.token;
+  const activeStoreId = auth?.activeStoreId;
 
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(activeStoreId ? { 'x-store-id': activeStoreId } : {}),
-    ...(options.headers || {}),
-  };
-};
-
-export const apiFetch = async (path, options = {}) => {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`http://127.0.0.1:5050/api${path}`, {
     ...options,
-    headers: buildHeaders(options),
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(activeStoreId ? { 'x-store-id': activeStoreId } : {}),
+      ...(options.headers || {}),
+    },
   });
+
+  if (response.status === 401) {
+    localStorage.removeItem('clothing_shop_auth');
+    localStorage.removeItem('clothing_shop_last_activity');
+    window.location.href = '/login';
+    return;
+  }
 
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.message || 'So‘rovda xatolik yuz berdi');
+    throw new Error(data?.message || 'So‘rovda xatolik');
   }
 
-  return data;
-};
+  localStorage.setItem('clothing_shop_last_activity', String(Date.now()));
 
-export { API_BASE_URL };
+  return data;
+}
+
+export const API_BASE_URL = 'http://127.0.0.1:5050';

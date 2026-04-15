@@ -1,108 +1,214 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { apiFetch } from '../lib/api';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 const AuthContext = createContext(null);
 
-export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [user, setUser] = useState(() => {
-    const raw = localStorage.getItem('user');
-    return raw ? JSON.parse(raw) : null;
-  });
-  const [activeStoreId, setActiveStoreIdState] = useState(
-    localStorage.getItem('activeStoreId') || null
-  );
-  const [loading, setLoading] = useState(false);
+const STORAGE_KEY = 'clothing_shop_auth';
+const LAST_ACTIVITY_KEY = 'clothing_shop_last_activity';
+const INACTIVITY_LIMIT = 10 * 60 * 1000;
 
-  const setSession = ({ token: newToken, user: newUser }) => {
-    localStorage.setItem('token', newToken);
-    localStorage.setItem('user', JSON.stringify(newUser));
+function safeParse(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
 
-    setToken(newToken);
-    setUser(newUser);
+function readStoredAuth() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  return safeParse(raw);
+}
 
-    const firstStoreId = newUser?.stores?.[0]?.id || null;
-    const existingStoreId = localStorage.getItem('activeStoreId');
+function writeStoredAuth(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
 
-    const validStore =
-      newUser?.stores?.some((store) => store.id === existingStoreId) ? existingStoreId : firstStoreId;
+function clearStoredAuth() {
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(LAST_ACTIVITY_KEY);
+}
 
-    if (validStore) {
-      localStorage.setItem('activeStoreId', validStore);
-      setActiveStoreIdState(validStore);
-    } else {
-      localStorage.removeItem('activeStoreId');
-      setActiveStoreIdState(null);
+function updateLastActivity() {
+  localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+}
+
+function getLastActivity() {
+  const raw = localStorage.getItem(LAST_ACTIVITY_KEY);
+  return raw ? Number(raw) : 0;
+}
+
+export function AuthProvider({ children }) {
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
+  const [activeStoreId, setActiveStoreIdState] = useState('');
+  const [bootstrapped, setBootstrapped] = useState(false);
+
+  const logoutTimerRef = useRef(null);
+
+  const clearLogoutTimer = () => {
+    if (logoutTimerRef.current) {
+      clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = null;
     }
   };
 
-  const login = async ({ username, password }) => {
-    setLoading(true);
-    try {
-      const data = await apiFetch('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username, password }),
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      setSession(data);
-      return data;
-    } finally {
-      setLoading(false);
-    }
+  const persist = (nextToken, nextUser, nextActiveStoreId) => {
+    writeStoredAuth({
+      token: nextToken,
+      user: nextUser,
+      activeStoreId: nextActiveStoreId,
+    });
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('activeStoreId');
+    clearLogoutTimer();
     setToken(null);
     setUser(null);
-    setActiveStoreIdState(null);
+    setActiveStoreIdState('');
+    clearStoredAuth();
+  };
+
+  const scheduleAutoLogout = () => {
+    clearLogoutTimer();
+
+    const lastActivity = getLastActivity();
+    const now = Date.now();
+    const passed = now - lastActivity;
+    const remaining = Math.max(INACTIVITY_LIMIT - passed, 0);
+
+    logoutTimerRef.current = setTimeout(() => {
+      logout();
+    }, remaining);
+  };
+
+  const registerActivity = () => {
+    if (!token) return;
+    updateLastActivity();
+    scheduleAutoLogout();
+  };
+
+  const login = (payload) => {
+    const nextToken = payload?.token || null;
+    const nextUser = payload?.user || null;
+    const nextStores = nextUser?.stores || [];
+    const nextActiveStoreId = nextStores[0]?.id || '';
+
+    setToken(nextToken);
+    setUser(nextUser);
+    setActiveStoreIdState(nextActiveStoreId);
+
+    persist(nextToken, nextUser, nextActiveStoreId);
+    updateLastActivity();
+    scheduleAutoLogout();
   };
 
   const setActiveStoreId = (storeId) => {
-    localStorage.setItem('activeStoreId', storeId);
     setActiveStoreIdState(storeId);
+
+    const stored = readStoredAuth();
+    if (stored?.token && stored?.user) {
+      persist(stored.token, stored.user, storeId);
+    }
+
+    updateLastActivity();
+    scheduleAutoLogout();
   };
 
-  const activeStore = user?.stores?.find((store) => store.id === activeStoreId) || null;
+  useEffect(() => {
+    const stored = readStoredAuth();
+
+    if (!stored?.token || !stored?.user) {
+      setBootstrapped(true);
+      return;
+    }
+
+    const lastActivity = getLastActivity();
+    const expired = !lastActivity || Date.now() - lastActivity > INACTIVITY_LIMIT;
+
+    if (expired) {
+      clearStoredAuth();
+      setBootstrapped(true);
+      return;
+    }
+
+    const restoredStores = stored.user?.stores || [];
+    const restoredActiveStoreId =
+      stored.activeStoreId || restoredStores[0]?.id || '';
+
+    setToken(stored.token);
+    setUser(stored.user);
+    setActiveStoreIdState(restoredActiveStoreId);
+
+    persist(stored.token, stored.user, restoredActiveStoreId);
+    updateLastActivity();
+    scheduleAutoLogout();
+    setBootstrapped(true);
+  }, []);
 
   useEffect(() => {
-    if (!user?.stores?.length) return;
+    if (!token) return;
 
-    const exists = user.stores.some((store) => store.id === activeStoreId);
-    if (!exists) {
-      const firstStoreId = user.stores[0].id;
-      localStorage.setItem('activeStoreId', firstStoreId);
-      setActiveStoreIdState(firstStoreId);
-    }
-  }, [user, activeStoreId]);
+    const events = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'];
+
+    const handleActivity = () => {
+      registerActivity();
+    };
+
+    events.forEach((event) => {
+      window.addEventListener(event, handleActivity, { passive: true });
+    });
+
+    const handleStorage = (e) => {
+      if (e.key === STORAGE_KEY && !e.newValue) {
+        logout();
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      events.forEach((event) => {
+        window.removeEventListener(event, handleActivity);
+      });
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [token]);
+
+  useEffect(() => {
+    return () => clearLogoutTimer();
+  }, []);
+
+  const stores = user?.stores || [];
+  const selectedStore =
+    stores.find((store) => store.id === activeStoreId) || stores[0] || null;
 
   const value = useMemo(
     () => ({
       token,
       user,
+      stores,
       activeStoreId,
-      activeStore,
+      selectedStore,
       isAuthenticated: Boolean(token && user),
-      loading,
+      bootstrapped,
       login,
       logout,
       setActiveStoreId,
+      registerActivity,
     }),
-    [token, user, activeStoreId, activeStore, loading]
+    [token, user, stores, activeStoreId, selectedStore, bootstrapped]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
+}
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext);
 
   if (!context) {
-    throw new Error('useAuth AuthProvider ichida ishlatilishi kerak');
+    throw new Error('useAuth must be used inside AuthProvider');
   }
 
   return context;
-};
+}
