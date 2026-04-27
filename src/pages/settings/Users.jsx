@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, X, Users as UsersIcon } from 'lucide-react';
-import { apiFetch } from '../lib/api';
+import { Plus, Pencil, X, Users as UsersIcon, Crown } from 'lucide-react';
+import { apiFetch } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 
 const initialForm = {
   fullName: '',
@@ -21,6 +22,7 @@ function UserModal({
   setForm,
   editingUser,
   saving,
+  canAssignDirector,
 }) {
   if (!open) return null;
 
@@ -46,7 +48,7 @@ function UserModal({
               {editingUser ? 'Xodimni tahrirlash' : 'Yangi xodim qo‘shish'}
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              Login, rol va do‘kon biriktirishni shu yerda boshqarasiz
+              Faqat ruxsat doirasidagi xodimlarni boshqarasiz
             </p>
           </div>
 
@@ -92,7 +94,7 @@ function UserModal({
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Parol {editingUser ? '(o‘zgartirmasangiz bo‘sh qoldiring)' : ''}
+                Parol {editingUser ? "(o‘zgartirmasangiz bo‘sh qoldiring)" : ''}
               </label>
               <input
                 type="password"
@@ -117,7 +119,7 @@ function UserModal({
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
               >
                 <option value="SELLER">SELLER</option>
-                <option value="DIRECTOR">DIRECTOR</option>
+                {canAssignDirector ? <option value="DIRECTOR">DIRECTOR</option> : null}
               </select>
             </div>
           </div>
@@ -202,7 +204,9 @@ function UserModal({
   );
 }
 
-export default function Users() {
+export default function EmployeesPage() {
+  const { user: currentUser } = useAuth();
+
   const [users, setUsers] = useState([]);
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -211,6 +215,9 @@ export default function Users() {
   const [editingUser, setEditingUser] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
+
+  const isOwner = currentUser?.role === 'OWNER';
+  const isDirector = currentUser?.role === 'DIRECTOR';
 
   const loadData = async () => {
     setLoading(true);
@@ -235,7 +242,10 @@ export default function Users() {
 
   const openCreateModal = () => {
     setEditingUser(null);
-    setForm(initialForm);
+    setForm({
+      ...initialForm,
+      role: isOwner ? 'SELLER' : 'SELLER',
+    });
     setModalOpen(true);
   };
 
@@ -247,7 +257,9 @@ export default function Users() {
       password: '',
       role: user.role || 'SELLER',
       isActive: user.isActive ?? true,
-      storeIds: (user.userStores || []).map((item) => item.storeId || item.store?.id).filter(Boolean),
+      storeIds: (user.userStores || [])
+        .map((item) => item.storeId || item.store?.id)
+        .filter(Boolean),
     });
     setModalOpen(true);
   };
@@ -267,12 +279,12 @@ export default function Users() {
     }
 
     if (!form.username.trim()) {
-      toast.error("Username majburiy");
+      toast.error('Username majburiy');
       return;
     }
 
     if (!editingUser && !form.password.trim()) {
-      toast.error("Parol majburiy");
+      toast.error('Parol majburiy');
       return;
     }
 
@@ -319,11 +331,29 @@ export default function Users() {
       }
 
       closeModal();
-      loadData();
+      await loadData();
     } catch (error) {
       toast.error(error.message || 'Saqlashda xatolik');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const makeOwner = async (targetUser) => {
+    if (!isOwner) return;
+
+    try {
+      await apiFetch(`/users/${targetUser.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          makeOwner: true,
+        }),
+      });
+
+      toast.success('Ownerlik o‘tkazildi');
+      await loadData();
+    } catch (error) {
+      toast.error(error.message || "Ownerlikni o'tkazib bo'lmadi");
     }
   };
 
@@ -334,8 +364,15 @@ export default function Users() {
         .map((item) => item.store?.name)
         .filter(Boolean)
         .join(', '),
+      isSelf: currentUser?.id === user.id,
     }));
-  }, [users]);
+  }, [users, currentUser?.id]);
+
+  const visibleRows = useMemo(() => {
+    if (isOwner) return rows;
+    if (isDirector) return rows.filter((row) => row.role === 'SELLER');
+    return [];
+  }, [rows, isOwner, isDirector]);
 
   return (
     <div className="space-y-4">
@@ -350,7 +387,7 @@ export default function Users() {
                 Xodimlar boshqaruvi
               </h1>
               <p className="mt-1 text-sm text-slate-500">
-                Foydalanuvchilar, rollar va do‘kon biriktirish
+                OWNER hammani, DIRECTOR faqat sellerlarni boshqaradi
               </p>
             </div>
           </div>
@@ -383,8 +420,8 @@ export default function Users() {
               </thead>
 
               <tbody>
-                {rows.length > 0 ? (
-                  rows.map((user) => (
+                {visibleRows.length > 0 ? (
+                  visibleRows.map((user) => (
                     <tr key={user.id} className="border-b border-slate-50">
                       <td className="py-3">
                         <div>
@@ -400,7 +437,9 @@ export default function Users() {
                       <td className="py-3">
                         <span
                           className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            user.role === 'DIRECTOR'
+                            user.role === 'OWNER'
+                              ? 'bg-amber-50 text-amber-700'
+                              : user.role === 'DIRECTOR'
                               ? 'bg-violet-50 text-violet-600'
                               : 'bg-blue-50 text-blue-600'
                           }`}
@@ -409,9 +448,7 @@ export default function Users() {
                         </span>
                       </td>
 
-                      <td className="py-3 text-slate-700">
-                        {user.storesText || '-'}
-                      </td>
+                      <td className="py-3 text-slate-700">{user.storesText || '-'}</td>
 
                       <td className="py-3">
                         <span
@@ -426,20 +463,38 @@ export default function Users() {
                       </td>
 
                       <td className="py-3 text-right">
-                        <button
-                          onClick={() => openEditModal(user)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                          <Pencil size={14} />
-                          Tahrirlash
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          {!user.isSelf ? (
+                            <button
+                              onClick={() => openEditModal(user)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                            >
+                              <Pencil size={14} />
+                              Tahrirlash
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
+                              O'zingiz
+                            </span>
+                          )}
+
+                          {isOwner && user.role === 'DIRECTOR' && !user.isSelf ? (
+                            <button
+                              onClick={() => makeOwner(user)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                            >
+                              <Crown size={14} />
+                              Owner qilish
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
                     <td colSpan="6" className="py-12 text-center text-sm text-slate-500">
-                      Hozircha xodimlar yo‘q
+                      Hozircha ko‘rsatadigan xodimlar yo‘q
                     </td>
                   </tr>
                 )}
@@ -458,6 +513,7 @@ export default function Users() {
         setForm={setForm}
         editingUser={editingUser}
         saving={saving}
+        canAssignDirector={isOwner}
       />
     </div>
   );

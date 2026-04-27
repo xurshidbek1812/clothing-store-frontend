@@ -1,9 +1,15 @@
 import { Trash2 } from 'lucide-react';
 
+function currencyLabel(currency) {
+  if (!currency) return '-';
+  return `${currency.code}${currency.symbol ? ` (${currency.symbol})` : ''}`;
+}
+
 export default function SupplierInItemRow({
   index,
   item,
   products,
+  currencies = [],
   onChange,
   onRemove,
 }) {
@@ -19,7 +25,7 @@ export default function SupplierInItemRow({
     .find((variant) => variant.id === item.productVariantId);
 
   return (
-    <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 xl:grid-cols-[2.2fr_1fr_1fr_1fr_auto]">
+    <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 xl:grid-cols-[2.1fr_0.8fr_1fr_0.9fr_1fr_0.9fr_auto]">
       <div>
         <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
           Tovar / Razmer
@@ -50,7 +56,6 @@ export default function SupplierInItemRow({
           <p className="mt-2 text-xs text-slate-500">
             {selectedVariant.productName}
             {selectedVariant.brand ? ` • ${selectedVariant.brand}` : ''}
-            {selectedVariant.barcode ? ` • Barcode: ${selectedVariant.barcode}` : ''}
           </p>
         ) : null}
       </div>
@@ -86,6 +91,24 @@ export default function SupplierInItemRow({
 
       <div>
         <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Kirim valyutasi
+        </label>
+        <select
+          value={item.costCurrencyId || ''}
+          onChange={(e) => onChange(index, 'costCurrencyId', e.target.value)}
+          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+        >
+          <option value="">Valyuta tanlang</option>
+          {currencies.map((currency) => (
+            <option key={currency.id} value={currency.id}>
+              {currencyLabel(currency)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
           Sotuv narxi
         </label>
         <input
@@ -97,6 +120,24 @@ export default function SupplierInItemRow({
           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
           placeholder="0"
         />
+      </div>
+
+      <div>
+        <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Sotuv valyutasi
+        </label>
+        <select
+          value={item.sellCurrencyId || ''}
+          onChange={(e) => onChange(index, 'sellCurrencyId', e.target.value)}
+          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+        >
+          <option value="">Valyuta tanlang</option>
+          {currencies.map((currency) => (
+            <option key={currency.id} value={currency.id}>
+              {currencyLabel(currency)}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex items-end">

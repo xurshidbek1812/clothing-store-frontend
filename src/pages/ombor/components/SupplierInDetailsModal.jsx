@@ -1,7 +1,45 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { Pencil } from 'lucide-react';
 
 function money(value) {
   return Number(value || 0).toLocaleString('uz-UZ');
+}
+
+function formatMoneyWithCurrency(value, currency) {
+  if (!currency) return money(value);
+  return `${money(value)} ${currency.code}`;
+}
+
+function summarizeTotalsByCurrency(items = []) {
+  const map = new Map();
+
+  for (const row of items) {
+    const currencyId = row.costCurrencyId;
+    if (!currencyId) continue;
+
+    const amount = Number(row.quantity || 0) * Number(row.costPrice || 0);
+    const prev = map.get(currencyId) || { amount: 0, currency: row.costCurrency || null };
+
+    map.set(currencyId, {
+      amount: prev.amount + amount,
+      currency: row.costCurrency || prev.currency,
+    });
+  }
+
+  return Array.from(map.values());
+}
+
+function getStatusLabel(status) {
+  switch (status) {
+    case 'PENDING':
+      return 'Jarayonda';
+    case 'APPROVED':
+      return 'Tasdiqlangan';
+    case 'REJECTED':
+      return 'Rad etilgan';
+    default:
+      return status || '-';
+  }
 }
 
 export default function SupplierInDetailsModal({
@@ -10,14 +48,14 @@ export default function SupplierInDetailsModal({
   item,
   onApprove,
   onReject,
+  onEdit,
   approving,
   rejecting,
   canApprove,
+  canEditPending,
 }) {
-  const totalAmount = (item?.items || []).reduce(
-    (sum, row) => sum + Number(row.quantity || 0) * Number(row.costPrice || 0),
-    0
-  );
+  const totalSummaries = summarizeTotalsByCurrency(item?.items || []);
+  const canEditThis = canEditPending && item?.status === 'PENDING';
 
   return (
     <AnimatePresence>
@@ -29,7 +67,7 @@ export default function SupplierInDetailsModal({
           exit={{ opacity: 0 }}
         >
           <motion.div
-            className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+            className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
             initial={{ opacity: 0, y: 18, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
@@ -57,7 +95,9 @@ export default function SupplierInDetailsModal({
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs text-slate-400">Status</p>
-                  <p className="mt-1 text-sm font-bold text-slate-900">{item.status}</p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">
+                    {getStatusLabel(item.status)}
+                  </p>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -76,9 +116,17 @@ export default function SupplierInDetailsModal({
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs text-slate-400">Jami summa</p>
-                  <p className="mt-1 text-sm font-bold text-slate-900">
-                    {money(totalAmount)}
-                  </p>
+                  <div className="mt-1 space-y-1">
+                    {totalSummaries.length > 0 ? (
+                      totalSummaries.map((row, index) => (
+                        <p key={index} className="text-sm font-bold text-slate-900">
+                          {formatMoneyWithCurrency(row.amount, row.currency)}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm font-bold text-slate-900">0</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -91,10 +139,11 @@ export default function SupplierInDetailsModal({
                       <tr className="border-b border-slate-100 text-left text-slate-500">
                         <th className="pb-3 font-semibold">Tovar</th>
                         <th className="pb-3 font-semibold">Razmer</th>
-                        <th className="pb-3 font-semibold">Barcode</th>
                         <th className="pb-3 font-semibold">Miqdor</th>
                         <th className="pb-3 font-semibold">Kirim narxi</th>
+                        <th className="pb-3 font-semibold">Kirim valyutasi</th>
                         <th className="pb-3 font-semibold">Sotuv narxi</th>
+                        <th className="pb-3 font-semibold">Sotuv valyutasi</th>
                         <th className="pb-3 font-semibold">Jami</th>
                       </tr>
                     </thead>
@@ -108,14 +157,20 @@ export default function SupplierInDetailsModal({
                           <td className="py-3 text-slate-700">
                             {row.productVariant?.size?.name || '-'}
                           </td>
-                          <td className="py-3 text-slate-700">
-                            {row.productVariant?.barcode || '-'}
-                          </td>
                           <td className="py-3 text-slate-700">{row.quantity}</td>
                           <td className="py-3 text-slate-700">{money(row.costPrice)}</td>
+                          <td className="py-3 text-slate-700">
+                            {row.costCurrency?.code || '-'}
+                          </td>
                           <td className="py-3 text-slate-700">{money(row.sellPrice)}</td>
+                          <td className="py-3 text-slate-700">
+                            {row.sellCurrency?.code || '-'}
+                          </td>
                           <td className="py-3 font-semibold text-slate-900">
-                            {money(Number(row.quantity || 0) * Number(row.costPrice || 0))}
+                            {formatMoneyWithCurrency(
+                              Number(row.quantity || 0) * Number(row.costPrice || 0),
+                              row.costCurrency
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -130,25 +185,38 @@ export default function SupplierInDetailsModal({
                 ) : null}
               </div>
 
-              {canApprove && item.status === 'PENDING' ? (
-                <div className="mt-4 flex justify-end gap-3">
+              <div className="mt-4 flex justify-end gap-3">
+                {canEditThis ? (
                   <button
-                    onClick={onReject}
+                    onClick={onEdit}
                     disabled={approving || rejecting}
-                    className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100 disabled:opacity-70"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-600 transition hover:bg-blue-100 disabled:opacity-70"
                   >
-                    {rejecting ? 'Rad etilmoqda...' : 'Rad etish'}
+                    <Pencil size={16} />
+                    Tahrirlash
                   </button>
+                ) : null}
 
-                  <button
-                    onClick={onApprove}
-                    disabled={approving || rejecting}
-                    className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
-                  >
-                    {approving ? 'Tasdiqlanmoqda...' : 'Tasdiqlash'}
-                  </button>
-                </div>
-              ) : null}
+                {canApprove && item.status === 'PENDING' ? (
+                  <>
+                    <button
+                      onClick={onReject}
+                      disabled={approving || rejecting}
+                      className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100 disabled:opacity-70"
+                    >
+                      {rejecting ? 'Rad etilmoqda...' : 'Rad etish'}
+                    </button>
+
+                    <button
+                      onClick={onApprove}
+                      disabled={approving || rejecting}
+                      className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
+                    >
+                      {approving ? 'Tasdiqlanmoqda...' : 'Tasdiqlash'}
+                    </button>
+                  </>
+                ) : null}
+              </div>
             </div>
           </motion.div>
         </motion.div>

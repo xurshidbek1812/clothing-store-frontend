@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   Eye,
@@ -7,6 +7,7 @@ import {
   Search,
   CalendarDays,
   RefreshCcw,
+  Printer,
 } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
 
@@ -41,39 +42,181 @@ function getTypeClass(type) {
   }
 }
 
+function formatMoneyWithCurrency(value, currency) {
+  if (!currency) return money(value);
+  return `${money(value)} ${currency.code}`;
+}
+
+function summarizeItemsByCurrency(items = []) {
+  const map = new Map();
+
+  for (const row of items) {
+    const currencyId = row.currencyId || row.currency?.id;
+    if (!currencyId) continue;
+
+    const prev = map.get(currencyId) || {
+      currency: row.currency || null,
+      amount: 0,
+    };
+
+    map.set(currencyId, {
+      currency: row.currency || prev.currency,
+      amount: prev.amount + Number(row.totalPrice || 0),
+    });
+  }
+
+  return Array.from(map.values());
+}
+
+function summarizePaymentsByCurrency(payments = []) {
+  const map = new Map();
+
+  for (const payment of payments) {
+    const currencyId = payment.cashbox?.currency?.id || payment.currencyId;
+    if (!currencyId) continue;
+
+    const prev = map.get(currencyId) || {
+      currency: payment.cashbox?.currency || null,
+      amount: 0,
+    };
+
+    map.set(currencyId, {
+      currency: payment.cashbox?.currency || prev.currency,
+      amount: prev.amount + Number(payment.amount || 0),
+    });
+  }
+
+  return Array.from(map.values());
+}
+
 function SaleDetailsModal({ open, onClose, item, loading }) {
   if (!open) return null;
 
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const itemTotals = summarizeItemsByCurrency(item?.items || []);
+  const paymentTotals = summarizePaymentsByCurrency(item?.CashTransaction || []);
+
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm print:bg-white">
+      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl print:max-h-none print:max-w-full print:rounded-none print:border-0 print:shadow-none">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 print:hidden">
           <div>
             <h3 className="text-xl font-black tracking-tight text-slate-900">
               Savdo tafsiloti
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              Batafsil ma’lumot
+              Batafsil ma’lumot va chop etish
             </p>
           </div>
 
-          <button
-            onClick={onClose}
-            className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            {!loading && item ? (
+              <button
+                onClick={handlePrint}
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
+              >
+                <Printer size={16} />
+                Chop etish
+              </button>
+            ) : null}
+
+            <button
+              onClick={onClose}
+              className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
-        <div className="max-h-[calc(90vh-73px)] overflow-y-auto px-6 py-5">
+        <div className="max-h-[calc(90vh-73px)] overflow-y-auto px-6 py-5 print:max-h-none print:overflow-visible print:px-0 print:py-0">
           {loading ? (
-            <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+            <div className="flex items-center justify-center py-16 text-sm text-slate-500 print:hidden">
               <Loader2 size={18} className="mr-2 animate-spin" />
               Yuklanmoqda...
             </div>
           ) : item ? (
             <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="hidden print:block">
+                <div className="mx-auto max-w-[320px] px-4 py-4 font-mono text-sm text-black">
+                  <div className="text-center">
+                    <h2 className="text-lg font-bold uppercase">DO'KON</h2>
+                    <p className="mt-1 text-xs">Savdo cheki</p>
+                    <p className="text-xs">{formatDateTime(item.createdAt)}</p>
+                    <p className="text-xs">Savdo kodi: {item.saleCode || item.id}</p>
+                  </div>
+
+                  <div className="my-4 border-t border-dashed border-black" />
+
+                  <div className="space-y-3">
+                    {(item.items || []).map((row) => (
+                      <div key={row.id}>
+                        <p className="font-semibold">
+                          {row.productVariant?.product?.name || '-'}
+                        </p>
+                        <p className="text-xs">
+                          Razmer: {row.productVariant?.size?.name || '-'}
+                        </p>
+                        <div className="mt-1 flex items-center justify-between text-xs">
+                          <span>
+                            {row.quantity} x {formatMoneyWithCurrency(row.unitPrice, row.currency)}
+                          </span>
+                          <span>{formatMoneyWithCurrency(row.totalPrice, row.currency)}</span>
+                        </div>
+                        {Number(row.discountAmount || 0) > 0 ? (
+                          <div className="flex items-center justify-between text-xs">
+                            <span>Chegirma</span>
+                            <span>- {formatMoneyWithCurrency(row.discountAmount, row.currency)}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="my-4 border-t border-dashed border-black" />
+
+                  <div className="space-y-1 text-sm">
+                    {itemTotals.map((row, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <span>Jami</span>
+                        <span>{formatMoneyWithCurrency(row.amount, row.currency)}</span>
+                      </div>
+                    ))}
+
+                    {Number(item.discountAmount || 0) > 0 ? (
+                      <div className="flex items-center justify-between">
+                        <span>Chegirma</span>
+                        <span>- {money(item.discountAmount)}</span>
+                      </div>
+                    ) : null}
+
+                    {paymentTotals.map((row, index) => (
+                      <div key={index} className="flex items-center justify-between font-bold">
+                        <span>To'lov</span>
+                        <span>{formatMoneyWithCurrency(row.amount, row.currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="my-4 border-t border-dashed border-black" />
+
+                  <div className="text-center text-xs">
+                    Xaridingiz uchun rahmat
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5 print:hidden">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs text-slate-400">Savdo kodi</p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">
+                    {item.saleCode || item.id}
+                  </p>
+                </div>
+
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs text-slate-400">Sana</p>
                   <p className="mt-1 text-sm font-bold text-slate-900">
@@ -96,19 +239,27 @@ function SaleDetailsModal({ open, onClose, item, loading }) {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs text-slate-400">Yakuniy summa</p>
+                  <p className="text-xs text-slate-400">Asosiy kassa</p>
                   <p className="mt-1 text-sm font-bold text-slate-900">
-                    {money(item.totalAmount)}
+                    {item.cashbox?.name || '-'} {item.cashbox?.currency ? `• ${item.cashbox.currency.code}` : ''}
                   </p>
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 print:hidden">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs text-slate-400">Jami summa</p>
-                  <p className="mt-1 text-sm font-bold text-slate-900">
-                    {money(item.subtotalAmount)}
-                  </p>
+                  <p className="text-xs text-slate-400">Itemlar bo‘yicha jami</p>
+                  <div className="mt-1 space-y-1">
+                    {itemTotals.length > 0 ? (
+                      itemTotals.map((row, index) => (
+                        <p key={index} className="text-sm font-bold text-slate-900">
+                          {formatMoneyWithCurrency(row.amount, row.currency)}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm font-bold text-slate-900">0</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -119,21 +270,22 @@ function SaleDetailsModal({ open, onClose, item, loading }) {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs text-slate-400">To‘langan</p>
-                  <p className="mt-1 text-sm font-bold text-emerald-600">
-                    {money(item.paidAmount)}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs text-slate-400">Asosiy kassa</p>
-                  <p className="mt-1 text-sm font-bold text-slate-900">
-                    {item.cashbox?.name || '-'}
-                  </p>
+                  <p className="text-xs text-slate-400">To‘lovlar bo‘yicha jami</p>
+                  <div className="mt-1 space-y-1">
+                    {paymentTotals.length > 0 ? (
+                      paymentTotals.map((row, index) => (
+                        <p key={index} className="text-sm font-bold text-emerald-600">
+                          {formatMoneyWithCurrency(row.amount, row.currency)}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm font-bold text-slate-900">0</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 print:hidden">
                 <h4 className="mb-3 text-lg font-black text-slate-900">Tovarlar</h4>
 
                 <div className="overflow-x-auto">
@@ -144,6 +296,7 @@ function SaleDetailsModal({ open, onClose, item, loading }) {
                         <th className="pb-3 font-semibold">Razmer</th>
                         <th className="pb-3 font-semibold">Ombor</th>
                         <th className="pb-3 font-semibold">Soni</th>
+                        <th className="pb-3 font-semibold">Valyuta</th>
                         <th className="pb-3 font-semibold">Narxi</th>
                         <th className="pb-3 font-semibold">Chegirma</th>
                         <th className="pb-3 font-semibold">Jami</th>
@@ -163,10 +316,17 @@ function SaleDetailsModal({ open, onClose, item, loading }) {
                             {row.batch?.warehouse?.name || '-'}
                           </td>
                           <td className="py-3 text-slate-700">{row.quantity}</td>
-                          <td className="py-3 text-slate-700">{money(row.unitPrice)}</td>
-                          <td className="py-3 text-rose-600">{money(row.discountAmount)}</td>
+                          <td className="py-3 text-slate-700">
+                            {row.currency?.code || '-'}
+                          </td>
+                          <td className="py-3 text-slate-700">
+                            {formatMoneyWithCurrency(row.unitPrice, row.currency)}
+                          </td>
+                          <td className="py-3 text-rose-600">
+                            {formatMoneyWithCurrency(row.discountAmount, row.currency)}
+                          </td>
                           <td className="py-3 font-semibold text-slate-900">
-                            {money(row.totalPrice)}
+                            {formatMoneyWithCurrency(row.totalPrice, row.currency)}
                           </td>
                         </tr>
                       ))}
@@ -175,7 +335,7 @@ function SaleDetailsModal({ open, onClose, item, loading }) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 print:hidden">
                 <h4 className="mb-3 text-lg font-black text-slate-900">To‘lovlar</h4>
 
                 {(item.CashTransaction || []).length > 0 ? (
@@ -195,7 +355,7 @@ function SaleDetailsModal({ open, onClose, item, loading }) {
                         </div>
 
                         <p className="text-sm font-bold text-emerald-600">
-                          {money(payment.amount)}
+                          {formatMoneyWithCurrency(payment.amount, payment.cashbox?.currency)}
                         </p>
                       </div>
                     ))}
@@ -206,7 +366,7 @@ function SaleDetailsModal({ open, onClose, item, loading }) {
               </div>
 
               {item.note ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 print:hidden">
                   <span className="font-semibold text-slate-900">Izoh:</span> {item.note}
                 </div>
               ) : null}
@@ -301,13 +461,13 @@ export default function SalesHistoryPage() {
     });
   };
 
-  const openDetails = async (saleId) => {
+  const openDetails = async (saleIdOrCode) => {
     setDetailsOpen(true);
     setDetailsLoading(true);
     setSelectedSale(null);
 
     try {
-      const res = await apiFetch(`/sales/${saleId}`);
+      const res = await apiFetch(`/sales/${saleIdOrCode}`);
       setSelectedSale(res);
     } catch (error) {
       toast.error(error.message || 'Savdo tafsiloti yuklanmadi');
@@ -317,30 +477,35 @@ export default function SalesHistoryPage() {
     }
   };
 
+  const summarizedRows = useMemo(() => {
+    return items.map((sale) => ({
+      ...sale,
+      itemTotals: summarizeItemsByCurrency(sale.items || []),
+      paymentTotals: summarizePaymentsByCurrency(sale.CashTransaction || []),
+    }));
+  }, [items]);
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-blue-50 p-3 text-blue-600">
-            <Receipt size={22} />
-          </div>
-          <div>
-            <h1 className="text-xl font-black tracking-tight text-slate-900">
-              Savdolar tarixi
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Barcha savdolar, filter va tafsilotlar
-            </p>
+    <>
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-blue-50 p-3 text-blue-600">
+              <Receipt size={22} />
+            </div>
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-slate-900">
+                Savdolar tarixi
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Naqd va nasiya savdolar ro‘yxati
+              </p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-[1.2fr_0.7fr_0.7fr_0.7fr_auto_auto]">
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
-              Qidiruv
-            </label>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_auto_auto]">
             <div className="relative">
               <Search
                 size={16}
@@ -349,37 +514,21 @@ export default function SalesHistoryPage() {
               <input
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSearch();
-                }}
+                placeholder="Savdo kodi, sotuvchi yoki tovar nomi"
                 className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500"
-                placeholder="Tovar, sotuvchi yoki izoh"
               />
             </div>
-          </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
-              Turi
-            </label>
             <select
               value={type}
-              onChange={(e) => {
-                setType(e.target.value);
-                loadData(1, { type: e.target.value });
-              }}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+              onChange={(e) => setType(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
             >
-              <option value="">Barchasi</option>
+              <option value="">Barcha turlar</option>
               <option value="CASH">Naqd</option>
               <option value="CREDIT">Nasiya</option>
             </select>
-          </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
-              Dan
-            </label>
             <div className="relative">
               <CalendarDays
                 size={16}
@@ -388,19 +537,11 @@ export default function SalesHistoryPage() {
               <input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  loadData(1, { dateFrom: e.target.value });
-                }}
+                onChange={(e) => setDateFrom(e.target.value)}
                 className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500"
               />
             </div>
-          </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
-              Gacha
-            </label>
             <div className="relative">
               <CalendarDays
                 size={16}
@@ -409,143 +550,158 @@ export default function SalesHistoryPage() {
               <input
                 type="date"
                 value={dateTo}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  loadData(1, { dateTo: e.target.value });
-                }}
+                onChange={(e) => setDateTo(e.target.value)}
                 className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500"
               />
             </div>
+
+            <button
+              type="button"
+              onClick={handleSearch}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              <Search size={16} />
+              Qidirish
+            </button>
+
+            <button
+              type="button"
+              onClick={handleReset}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              <RefreshCcw size={16} />
+              Tozalash
+            </button>
           </div>
 
-          <button
-            onClick={handleSearch}
-            className="mt-7 inline-flex h-[46px] items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
-          >
-            <Search size={16} />
-            Qidirish
-          </button>
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-sm text-slate-500">
+              <Loader2 size={18} className="mr-2 animate-spin" />
+              Yuklanmoqda...
+            </div>
+          ) : summarizedRows.length ? (
+            <>
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-left text-slate-500">
+                      <th className="pb-3 font-semibold">Kod</th>
+                      <th className="pb-3 font-semibold">Sana</th>
+                      <th className="pb-3 font-semibold">Turi</th>
+                      <th className="pb-3 font-semibold">Sotuvchi</th>
+                      <th className="pb-3 font-semibold">Itemlar</th>
+                      <th className="pb-3 font-semibold">Jami</th>
+                      <th className="pb-3 font-semibold">To‘lov</th>
+                      <th className="pb-3 text-right font-semibold">Amal</th>
+                    </tr>
+                  </thead>
 
-          <button
-            onClick={handleReset}
-            className="mt-7 inline-flex h-[46px] items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            <RefreshCcw size={16} />
-            Tozalash
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        {loading ? (
-          <div className="flex items-center justify-center py-14 text-sm text-slate-500">
-            <Loader2 size={18} className="mr-2 animate-spin" />
-            Yuklanmoqda...
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-left text-slate-500">
-                    <th className="pb-3 font-semibold">Sana</th>
-                    <th className="pb-3 font-semibold">Sotuvchi</th>
-                    <th className="pb-3 font-semibold">Turi</th>
-                    <th className="pb-3 font-semibold">Jami</th>
-                    <th className="pb-3 font-semibold">Chegirma</th>
-                    <th className="pb-3 font-semibold">To‘langan</th>
-                    <th className="pb-3 font-semibold">Items</th>
-                    <th className="pb-3 text-right font-semibold">Amal</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {items.length > 0 ? (
-                    items.map((sale) => (
-                      <tr key={sale.id} className="border-b border-slate-50">
-                        <td className="py-3 text-slate-700">
-                          {formatDateTime(sale.createdAt)}
+                  <tbody>
+                    {summarizedRows.map((item) => (
+                      <tr key={item.id} className="border-b border-slate-50">
+                        <td className="py-3 font-semibold text-slate-900">
+                          {item.saleCode || item.id}
                         </td>
-
                         <td className="py-3 text-slate-700">
-                          {sale.seller?.fullName || '-'}
+                          {formatDateTime(item.createdAt)}
                         </td>
-
                         <td className="py-3">
                           <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getTypeClass(
-                              sale.type
-                            )}`}
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getTypeClass(item.type)}`}
                           >
-                            {getTypeLabel(sale.type)}
+                            {getTypeLabel(item.type)}
                           </span>
                         </td>
-
-                        <td className="py-3 font-semibold text-slate-900">
-                          {money(sale.totalAmount)}
-                        </td>
-
-                        <td className="py-3 text-rose-600">
-                          {money(sale.discountAmount)}
-                        </td>
-
-                        <td className="py-3 text-emerald-600">
-                          {money(sale.paidAmount)}
-                        </td>
-
                         <td className="py-3 text-slate-700">
-                          {sale._count?.items || 0}
+                          {item.seller?.fullName || item.seller?.username || '-'}
                         </td>
-
+                        <td className="py-3 text-slate-700">
+                          {item._count?.items || 0} ta
+                        </td>
                         <td className="py-3">
-                          <div className="flex justify-end">
-                            <button
-                              onClick={() => openDetails(sale.id)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                              title="Ko‘rish"
-                            >
-                              <Eye size={16} />
-                            </button>
+                          <div className="space-y-1">
+                            {item.itemTotals.length > 0 ? (
+                              item.itemTotals.map((row, index) => (
+                                <div
+                                  key={index}
+                                  className="text-sm font-semibold text-slate-900"
+                                >
+                                  {formatMoneyWithCurrency(row.amount, row.currency)}
+                                </div>
+                              ))
+                            ) : (
+                              <span className="text-slate-500">0</span>
+                            )}
                           </div>
                         </td>
+                        <td className="py-3">
+                          <div className="space-y-1">
+                            {item.paymentTotals.length > 0 ? (
+                              item.paymentTotals.map((row, index) => (
+                                <div
+                                  key={index}
+                                  className="text-sm font-semibold text-emerald-600"
+                                >
+                                  {formatMoneyWithCurrency(row.amount, row.currency)}
+                                </div>
+                              ))
+                            ) : (
+                              <span className="text-slate-500">0</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openDetails(item.saleCode || item.id)}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <Eye size={16} />
+                            Ko‘rish
+                          </button>
+                        </td>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="8" className="py-12 text-center text-sm text-slate-500">
-                        Hozircha savdolar yo‘q
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between">
-              <p className="text-sm text-slate-500">
-                Sahifa {pagination.page} / {pagination.totalPages || 1}
-              </p>
-
-              <div className="flex gap-2">
-                <button
-                  disabled={pagination.page <= 1}
-                  onClick={() => loadData(pagination.page - 1)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Oldingi
-                </button>
-
-                <button
-                  disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => loadData(pagination.page + 1)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Keyingi
-                </button>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
+                <div className="text-sm text-slate-500">
+                  Jami: {pagination.totalItems} ta
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={pagination.page <= 1}
+                    onClick={() => loadData(pagination.page - 1)}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Oldingi
+                  </button>
+
+                  <span className="px-2 text-sm font-semibold text-slate-700">
+                    {pagination.page} / {pagination.totalPages}
+                  </span>
+
+                  <button
+                    type="button"
+                    disabled={pagination.page >= pagination.totalPages}
+                    onClick={() => loadData(pagination.page + 1)}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Keyingi
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="py-12 text-center text-sm text-slate-500">
+              Savdolar topilmadi
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
       <SaleDetailsModal
@@ -557,6 +713,6 @@ export default function SalesHistoryPage() {
         item={selectedSale}
         loading={detailsLoading}
       />
-    </div>
+    </>
   );
 }

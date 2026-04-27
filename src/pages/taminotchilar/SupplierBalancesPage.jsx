@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { WalletCards, Eye } from 'lucide-react';
+import { WalletCards, Eye, Loader2 } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
 import SupplierLedgerDrawer from './components/SupplierLedgerDrawer';
-
-function money(value) {
-  return Number(value || 0).toLocaleString('uz-UZ');
-}
 
 export default function SupplierBalancesPage() {
   const [items, setItems] = useState([]);
@@ -39,7 +35,7 @@ export default function SupplierBalancesPage() {
     setLedgerLoading(true);
 
     try {
-      const res = await apiFetch(`/supplier-payments/ledger/${supplierId}`);
+      const res = await apiFetch(`/supplier-payments/${supplierId}/history`);
       setLedgerData(res);
     } catch (error) {
       toast.error(error.message || 'Tafsilot yuklanmadi');
@@ -53,7 +49,7 @@ export default function SupplierBalancesPage() {
     if (!selectedSupplierId) return;
 
     try {
-      const res = await apiFetch(`/supplier-payments/ledger/${selectedSupplierId}`);
+      const res = await apiFetch(`/supplier-payments/${selectedSupplierId}/history`);
       setLedgerData(res);
       await loadBalances();
     } catch (error) {
@@ -81,7 +77,10 @@ export default function SupplierBalancesPage() {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         {loading ? (
-          <div className="py-12 text-center text-sm text-slate-500">Yuklanmoqda...</div>
+          <div className="flex items-center justify-center py-12 text-sm text-slate-500">
+            <Loader2 size={18} className="mr-2 animate-spin" />
+            Yuklanmoqda...
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -106,16 +105,21 @@ export default function SupplierBalancesPage() {
                           <p className="text-xs text-slate-500">{item.address || '-'}</p>
                         </div>
                       </td>
+
                       <td className="py-3 text-slate-700">{item.phone || '-'}</td>
+
                       <td className="py-3 font-semibold text-slate-900">
-                        {money(item.totalDebt)}
+                        {item.totalDebtFormatted || '0'}
                       </td>
+
                       <td className="py-3 font-semibold text-emerald-600">
-                        {money(item.totalPaid)}
+                        {item.totalPaidFormatted || '0'}
                       </td>
+
                       <td className="py-3 font-semibold text-rose-600">
-                        {money(item.remainingDebt)}
+                        {item.remainingDebtFormatted || '0'}
                       </td>
+
                       <td className="py-3 text-right">
                         <button
                           onClick={() => openLedger(item.id)}

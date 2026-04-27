@@ -14,6 +14,8 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from '../../lib/api';
+import ImagePreviewModal from '../../components/ImagePreviewModal';
+import SaleReceiptModal from '../../components/SaleReceiptModal';
 
 function money(value) {
   return Number(value || 0).toLocaleString('uz-UZ');
@@ -34,6 +36,23 @@ function createPaymentRow(defaultCashboxId = '') {
     cashboxId: defaultCashboxId,
     amount: '',
   };
+}
+
+function getCurrencyLabel(currency) {
+  if (!currency) return '-';
+  return `${currency.code}${currency.symbol ? ` (${currency.symbol})` : ''}`;
+}
+
+function formatMoneyWithCurrency(value, currency) {
+  if (!currency) return money(value);
+  return `${money(value)} ${currency.code}`;
+}
+
+function resolveImageUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
+  return `${API_BASE_URL}/${url}`;
 }
 
 export default function CashSalePage() {
@@ -64,6 +83,13 @@ export default function CashSalePage() {
   const [isScannerSearch, setIsScannerSearch] = useState(false);
   const [searchError, setSearchError] = useState('');
 
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState('');
+  const [previewTitle, setPreviewTitle] = useState('');
+
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [lastSale, setLastSale] = useState(null);
+
   useEffect(() => {
     const loadInitial = async () => {
       setLoadingInitial(true);
@@ -83,9 +109,7 @@ export default function CashSalePage() {
           setWarehouseId(nextWarehouses[0].id);
         }
 
-        setPayments([
-          createPaymentRow(nextCashboxes[0]?.id || ''),
-        ]);
+        setPayments([createPaymentRow(nextCashboxes[0]?.id || '')]);
       } catch (error) {
         toast.error(error.message || 'Boshlang‘ich ma’lumotlar yuklanmadi');
       } finally {
@@ -166,6 +190,19 @@ export default function CashSalePage() {
     return availableBatches.find((batch) => batch.id === selectedBatchId) || null;
   }, [availableBatches, selectedBatchId]);
 
+  const saleCurrency = useMemo(() => {
+    return cart[0]?.sellCurrency || null;
+  }, [cart]);
+
+  const saleCurrencyId = useMemo(() => {
+    return cart[0]?.sellCurrencyId || '';
+  }, [cart]);
+
+  const filteredCashboxes = useMemo(() => {
+    if (!saleCurrencyId) return cashboxes;
+    return cashboxes.filter((cashbox) => cashbox.currencyId === saleCurrencyId);
+  }, [cashboxes, saleCurrencyId]);
+
   const resetSelector = () => {
     setSelectedProduct(null);
     setSelectedVariant(null);
@@ -193,6 +230,18 @@ export default function CashSalePage() {
 
     if (!selectedBatch) {
       toast.error('Batch tanlang');
+      return;
+    }
+
+    if (!selectedBatch.sellCurrencyId) {
+      toast.error('Batchning sotuv valyutasi topilmadi');
+      return;
+    }
+
+    if (saleCurrencyId && saleCurrencyId !== selectedBatch.sellCurrencyId) {
+      toast.error(
+        `Bu savatda faqat ${saleCurrency?.code || 'bir xil'} valyutadagi tovarlar bo‘lishi mumkin`
+      );
       return;
     }
 
@@ -231,6 +280,7 @@ export default function CashSalePage() {
         productVariantId: selectedVariant.id,
         batchId: selectedBatch.id,
         productName: selectedProduct.name,
+        imageUrl: selectedProduct.imageUrl || '',
         brand: selectedProduct.brand || '',
         sizeName: selectedVariant.size?.name || '',
         quantity: qty,
@@ -238,6 +288,8 @@ export default function CashSalePage() {
         discountAmount: discount,
         maxQuantity: selectedBatch.remainingQuantity,
         batchCreatedAt: selectedBatch.createdAt,
+        sellCurrencyId: selectedBatch.sellCurrencyId,
+        sellCurrency: selectedBatch.sellCurrency || null,
       },
     ]);
 
@@ -264,10 +316,8 @@ export default function CashSalePage() {
   };
 
   const addPaymentRow = () => {
-    setPayments((prev) => [
-      ...prev,
-      createPaymentRow(cashboxes[0]?.id || ''),
-    ]);
+    const defaultCashboxId = filteredCashboxes[0]?.id || '';
+    setPayments((prev) => [...prev, createPaymentRow(defaultCashboxId)]);
   };
 
   const updatePaymentRow = (id, field, value) => {
@@ -285,19 +335,45 @@ export default function CashSalePage() {
 
   const removePaymentRow = (id) => {
     setPayments((prev) => {
+      const defaultCashboxId = filteredCashboxes[0]?.id || '';
       if (prev.length === 1) {
-        return [createPaymentRow(cashboxes[0]?.id || '')];
+        return [createPaymentRow(defaultCashboxId)];
       }
       return prev.filter((payment) => payment.id !== id);
     });
   };
 
+  useEffect(() => {
+    const defaultCashboxId = filteredCashboxes[0]?.id || '';
+
+    setPayments((prev) => {
+      if (!prev.length) {
+        return [createPaymentRow(defaultCashboxId)];
+      }
+
+      return prev.map((payment, index) => {
+        const exists = filteredCashboxes.some((cashbox) => cashbox.id === payment.cashboxId);
+
+        if (exists) return payment;
+
+        if (index === 0) {
+          return {
+            ...payment,
+            cashboxId: defaultCashboxId,
+          };
+        }
+
+        return {
+          ...payment,
+          cashboxId: '',
+        };
+      });
+    });
+  }, [saleCurrencyId, filteredCashboxes]);
+
   const subtotalAmount = useMemo(() => {
     return roundMoney(
-      cart.reduce(
-        (sum, item) => sum + toNumber(item.quantity) * toNumber(item.unitPrice),
-        0
-      )
+      cart.reduce((sum, item) => sum + toNumber(item.quantity) * toNumber(item.unitPrice), 0)
     );
   }, [cart]);
 
@@ -314,9 +390,7 @@ export default function CashSalePage() {
   }, [subtotalAmount, itemDiscountTotal, generalDiscount]);
 
   const paidAmount = useMemo(() => {
-    return roundMoney(
-      payments.reduce((sum, payment) => sum + toNumber(payment.amount), 0)
-    );
+    return roundMoney(payments.reduce((sum, payment) => sum + toNumber(payment.amount), 0));
   }, [payments]);
 
   const remainingAmount = useMemo(() => {
@@ -330,6 +404,11 @@ export default function CashSalePage() {
   const submitSale = async () => {
     if (!cart.length) {
       toast.error('Savat bo‘sh');
+      return;
+    }
+
+    if (!saleCurrencyId) {
+      toast.error('Savdo valyutasi aniqlanmadi');
       return;
     }
 
@@ -354,14 +433,21 @@ export default function CashSalePage() {
     }
 
     for (const payment of normalizedPayments) {
+      const cashbox = filteredCashboxes.find((item) => item.id === payment.cashboxId);
+
       if (!payment.cashboxId || payment.amount <= 0) {
         toast.error("To'lov ma'lumotlari noto‘g‘ri");
+        return;
+      }
+
+      if (!cashbox) {
+        toast.error("Tanlangan kassa savdo valyutasiga mos emas");
         return;
       }
     }
 
     if (!isFullyPaid) {
-      toast.error("Savdoni yakunlashdan oldin to'lov to‘liq kiritilishi kerak");
+      toast.error("Savdoni yakunlashdan oldin to‘lov to‘liq kiritilishi kerak");
       return;
     }
 
@@ -401,7 +487,15 @@ export default function CashSalePage() {
         }),
       });
 
-      toast.success(res.message || 'Savdo bajarildi');
+      toast.success(
+        res.sale?.saleCode
+          ? `Savdo yaratildi • ${res.sale.saleCode}`
+          : res.message || 'Savdo bajarildi'
+      );
+
+      setLastSale(res.sale || null);
+      setReceiptOpen(true);
+
       setCart([]);
       setNote('');
       setTotalDiscount('');
@@ -417,471 +511,515 @@ export default function CashSalePage() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-blue-50 p-3 text-blue-600">
-            <ShoppingCart size={22} />
-          </div>
-          <div>
-            <h1 className="text-xl font-black tracking-tight text-slate-900">
-              Naqd savdo
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Ombor bo‘yicha tovar tanlash, savat va ko‘p kassa orqali to‘lov
-            </p>
+    <>
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-blue-50 p-3 text-blue-600">
+              <ShoppingCart size={22} />
+            </div>
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-slate-900">
+                Naqd savdo
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Ombor bo‘yicha tovar tanlash, savat va ko‘p kassa orqali to‘lov
+              </p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            {loadingInitial ? (
-              <div className="flex items-center justify-center py-12 text-sm text-slate-500">
-                <Loader2 size={18} className="mr-2 animate-spin" />
-                Yuklanmoqda...
-              </div>
-            ) : (
-              <>
-                <div className="mb-4 flex items-center gap-2">
-                  <Warehouse size={18} className="text-slate-500" />
-                  <h2 className="text-lg font-black text-slate-900">Tovar qo‘shish</h2>
+        {lastSale?.saleCode ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+            Oxirgi savdo kodi: {lastSale.saleCode}
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              {loadingInitial ? (
+                <div className="flex items-center justify-center py-12 text-sm text-slate-500">
+                  <Loader2 size={18} className="mr-2 animate-spin" />
+                  Yuklanmoqda...
                 </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      Ombor
-                    </label>
-                    <select
-                      value={warehouseId}
-                      onChange={(e) => {
-                        setWarehouseId(e.target.value);
-                        setSearch('');
-                        setSearchResults([]);
-                        resetSelector();
-                      }}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                    >
-                      <option value="">Ombor tanlang</option>
-                      {warehouses.map((warehouse) => (
-                        <option key={warehouse.id} value={warehouse.id}>
-                          {warehouse.name}
-                        </option>
-                      ))}
-                    </select>
+              ) : (
+                <>
+                  <div className="mb-4 flex items-center gap-2">
+                    <Warehouse size={18} className="text-slate-500" />
+                    <h2 className="text-lg font-black text-slate-900">Tovar qo‘shish</h2>
                   </div>
 
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      Tovar qidirish
-                    </label>
-                    <div className="relative">
-                      <Search
-                        size={16}
-                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
-                      <input
-                        value={search}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">
+                        Ombor
+                      </label>
+                      <select
+                        value={warehouseId}
                         onChange={(e) => {
-                          setSearchTouched(true);
-                          setIsScannerSearch(false);
-                          setSearch(e.target.value.replace(/\s+/g, ' '));
+                          setWarehouseId(e.target.value);
+                          setSearch('');
+                          setSearchResults([]);
+                          resetSelector();
                         }}
-                        className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-10 text-sm outline-none focus:border-blue-500"
-                        placeholder="Nom, brend, razmer yoki barcode"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const q = search.trim();
-                          if (!q) return;
-                          setSearchTouched(true);
-                          setIsScannerSearch(true);
-                          setSearch(q);
-                        }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
-                        title="Skaner qidiruvi"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
                       >
-                        <ScanLine size={16} />
-                      </button>
+                        <option value="">Ombor tanlang</option>
+                        {warehouses.map((warehouse) => (
+                          <option key={warehouse.id} value={warehouse.id}>
+                            {warehouse.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
-                </div>
 
-                <div className="mt-3 h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2">
-                  {!warehouseId ? (
-                    <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                      Avval ombor tanlang
-                    </div>
-                  ) : !search.trim() ? (
-                    <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                      Tovar qidirish uchun yozing
-                    </div>
-                  ) : searchLoading ? (
-                    <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                      <Loader2 size={16} className="mr-2 animate-spin" />
-                      Qidirilmoqda...
-                    </div>
-                  ) : searchResults.length > 0 ? (
-                    <div className="space-y-2">
-                      {searchResults.map((product) => (
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">
+                        Tovar qidirish
+                      </label>
+                      <div className="relative">
+                        <Search
+                          size={16}
+                          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
+                        <input
+                          value={search}
+                          onChange={(e) => {
+                            setSearchTouched(true);
+                            setIsScannerSearch(false);
+                            setSearch(e.target.value.replace(/\s+/g, ' '));
+                          }}
+                          className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-10 text-sm outline-none focus:border-blue-500"
+                          placeholder="Nom, brend, razmer yoki barcode"
+                        />
                         <button
-                          key={product.id}
                           type="button"
                           onClick={() => {
-                            setSelectedProduct(product);
-                            setSelectedVariant(null);
-                            setSelectedBatchId('');
-                            setQuantity('');
-                            setUnitPrice('');
-                            setItemDiscount('');
+                            const q = search.trim();
+                            if (!q) return;
+                            setSearchTouched(true);
+                            setIsScannerSearch(true);
+                            setSearch(q);
                           }}
-                          className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
-                            selectedProduct?.id === product.id
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-slate-200 bg-white hover:bg-slate-50'
-                          }`}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                          title="Skaner qidiruvi"
                         >
-                          <div className="flex items-center gap-3">
-                            <div className="h-14 w-14 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                          <ScanLine size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                    {!warehouseId ? (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                        Avval ombor tanlang
+                      </div>
+                    ) : !search.trim() ? (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                        Tovar qidirish uchun yozing
+                      </div>
+                    ) : searchLoading ? (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                        <Loader2 size={16} className="mr-2 animate-spin" />
+                        Qidirilmoqda...
+                      </div>
+                    ) : searchResults.length > 0 ? (
+                      <div className="space-y-2">
+                        {searchResults.map((product) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedProduct(product);
+                              setSelectedVariant(null);
+                              setSelectedBatchId('');
+                              setUnitPrice('');
+                              setQuantity('');
+                              setItemDiscount('');
+                            }}
+                            className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                              selectedProduct?.id === product.id
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-slate-200 bg-white hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
                               {product.imageUrl ? (
                                 <img
-                                  src={`${API_BASE_URL}${product.imageUrl}`}
+                                  src={resolveImageUrl(product.imageUrl)}
                                   alt={product.name}
-                                  className="h-full w-full object-cover"
+                                  className="h-12 w-12 rounded-xl object-cover"
                                 />
                               ) : (
-                                <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
-                                  Rasm yo‘q
+                                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                  <ShoppingCart size={16} />
                                 </div>
                               )}
-                            </div>
 
-                            <div className="min-w-0">
-                              <div className="font-semibold">{product.name}</div>
-                              <div
-                                className={`text-xs ${
-                                  selectedProduct?.id === product.id
-                                    ? 'text-slate-200'
-                                    : 'text-slate-500'
-                                }`}
-                              >
-                                {product.brand || 'Brend yo‘q'}
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-semibold text-slate-900">
+                                  {product.name}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {product.brand || 'Brend yo‘q'}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex h-full items-center justify-center px-4 text-center text-sm text-slate-500">
-                      Tanlangan omborda mos va qoldig‘i bor tovar topilmadi
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4">
-                  <div className="mb-4">
-                    <h3 className="text-base font-black text-slate-900">Tanlangan tovar</h3>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Razmer, batch, soni, narx va chegirmani kiriting
-                    </p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center text-center">
+                        <p className="text-sm text-slate-500">
+                          {searchError || 'Hech narsa topilmadi'}
+                        </p>
+                        {searchTouched ? (
+                          <p className="mt-1 text-xs text-slate-400">
+                            So‘zni boshqacha yozib ko‘ring
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
 
                   {selectedProduct ? (
-                    <div className="space-y-4">
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex items-center gap-4">
-                          <div className="h-20 w-20 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                            {selectedProduct.imageUrl ? (
-                              <img
-                                src={`${API_BASE_URL}${selectedProduct.imageUrl}`}
-                                alt={selectedProduct.name}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                                Rasm yo‘q
-                              </div>
-                            )}
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-slate-900">{selectedProduct.name}</p>
-                            <p className="text-sm text-slate-500">
-                              {selectedProduct.brand || 'Brend yo‘q'}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
+                    <div className="mt-4 grid gap-4 lg:grid-cols-4">
                       <div>
                         <label className="mb-2 block text-sm font-semibold text-slate-700">
                           Razmer
                         </label>
-                        <div className="flex flex-wrap gap-2">
+                        <select
+                          value={selectedVariant?.id || ''}
+                          onChange={(e) => {
+                            const variant =
+                              selectedProduct.variants?.find((item) => item.id === e.target.value) || null;
+                            setSelectedVariant(variant);
+                            setSelectedBatchId('');
+                            setUnitPrice('');
+                            setQuantity('');
+                            setItemDiscount('');
+                          }}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                        >
+                          <option value="">Razmer tanlang</option>
                           {(selectedProduct.variants || []).map((variant) => (
-                            <button
-                              key={variant.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedVariant(variant);
-                                setSelectedBatchId('');
-                                setQuantity('');
-                                setUnitPrice('');
-                                setItemDiscount('');
-                              }}
-                              className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                                selectedVariant?.id === variant.id
-                                  ? 'bg-slate-900 text-white'
-                                  : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                              }`}
-                            >
-                              {variant.size?.name || '-'} ({variant.totalStock || 0})
-                            </button>
+                            <option key={variant.id} value={variant.id}>
+                              {variant.size?.name || '-'} {variant.barcode ? `• ${variant.barcode}` : ''}
+                            </option>
                           ))}
-                        </div>
+                        </select>
                       </div>
 
-                      {selectedVariant ? (
-                        <>
-                          <div>
-                            <label className="mb-2 block text-sm font-semibold text-slate-700">
-                              Batch
-                            </label>
-                            <select
-                              value={selectedBatchId}
-                              onChange={(e) => {
-                                const batchId = e.target.value;
-                                setSelectedBatchId(batchId);
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">
+                          Batch
+                        </label>
+                        <select
+                          value={selectedBatchId}
+                          onChange={(e) => {
+                            const batchId = e.target.value;
+                            setSelectedBatchId(batchId);
+                            const batch =
+                              availableBatches.find((item) => item.id === batchId) || null;
+                            setUnitPrice(batch ? String(batch.sellPrice ?? '') : '');
+                          }}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                        >
+                          <option value="">Batch tanlang</option>
+                          {availableBatches.map((batch) => (
+                            <option key={batch.id} value={batch.id}>
+                              {new Date(batch.createdAt).toLocaleDateString('uz-UZ')} • Qoldiq:{' '}
+                              {batch.remainingQuantity}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                                const batch = (selectedVariant.stockBatches || []).find(
-                                  (b) => b.id === batchId
-                                );
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">
+                          Soni
+                        </label>
+                        <input
+                          value={quantity}
+                          onChange={(e) => setQuantity(e.target.value)}
+                          type="number"
+                          min="1"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
 
-                                if (batch) {
-                                  setUnitPrice(String(batch.sellPrice ?? ''));
-                                }
-                              }}
-                              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                            >
-                              <option value="">Batch tanlang</option>
-                              {availableBatches.map((batch) => (
-                                <option key={batch.id} value={batch.id}>
-                                  {batch.warehouse?.name || '-'} • Qoldiq: {batch.remainingQuantity} • Narx: {money(batch.sellPrice)} • Kirim: {new Date(batch.createdAt).toLocaleDateString('uz-UZ')}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">
+                          Narx
+                        </label>
+                        <input
+                          value={unitPrice}
+                          onChange={(e) => setUnitPrice(e.target.value)}
+                          type="number"
+                          min="0"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
 
-                          <div className="grid gap-4 md:grid-cols-4">
-                            <div>
-                              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                                Soni
-                              </label>
-                              <input
-                                type="number"
-                                min="1"
-                                value={quantity}
-                                onChange={(e) => setQuantity(e.target.value)}
-                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                              />
-                            </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">
+                          Chegirma
+                        </label>
+                        <input
+                          value={itemDiscount}
+                          onChange={(e) => setItemDiscount(e.target.value)}
+                          type="number"
+                          min="0"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
 
-                            <div>
-                              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                                Narxi
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={unitPrice}
-                                onChange={(e) => setUnitPrice(e.target.value)}
-                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                                Chegirma
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={itemDiscount}
-                                onChange={(e) => setItemDiscount(e.target.value)}
-                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                              />
-                            </div>
-
-                            <div className="flex items-end">
-                              <button
-                                type="button"
-                                onClick={addToCart}
-                                className="inline-flex h-[48px] items-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
-                              >
-                                <Plus size={16} />
-                                Savatga qo‘shish
-                              </button>
-                            </div>
-                          </div>
-                        </>
-                      ) : null}
+                      <div className="lg:col-span-3 flex items-end">
+                        <button
+                          type="button"
+                          onClick={addToCart}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                        >
+                          <Plus size={16} />
+                          Savatga qo‘shish
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="py-10 text-center text-sm text-slate-500">
-                      Avval tovar tanlang
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex items-center gap-2">
-              <Wallet size={18} className="text-slate-500" />
-              <h2 className="text-lg font-black text-slate-900">To‘lov bo‘limi</h2>
+                  ) : null}
+                </>
+              )}
             </div>
 
-            {loadingInitial ? (
-              <div className="flex items-center justify-center py-12 text-sm text-slate-500">
-                <Loader2 size={18} className="mr-2 animate-spin" />
-                Yuklanmoqda...
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-4 flex items-center gap-2">
+                <ShoppingCart size={18} className="text-slate-500" />
+                <h2 className="text-lg font-black text-slate-900">Savat</h2>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Umumiy chegirma
-                  </label>
-                  <div className="relative">
-                    <BadgePercent
-                      size={16}
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={totalDiscount}
-                      onChange={(e) => setTotalDiscount(e.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500"
-                      placeholder="0"
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Bu chegirma savatdagi tovarlarga proporsional taqsimlanadi
-                  </p>
-                </div>
 
+              {cart.length ? (
+                <div className="space-y-3">
+                  {cart.map((item) => {
+                    const lineSubtotal = roundMoney(toNumber(item.quantity) * toNumber(item.unitPrice));
+                    const lineTotal = roundMoney(lineSubtotal - toNumber(item.discountAmount));
+
+                    return (
+                      <div
+                        key={item.tempId}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-slate-900">
+                              {item.productName}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                              <span>{item.brand || 'Brend yo‘q'}</span>
+                              <span>{item.sizeName}</span>
+                              <span>{item.warehouseName}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => removeCartItem(item.tempId)}
+                            className="rounded-xl p-2 text-rose-500 transition hover:bg-rose-50"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-4">
+                          <input
+                            value={item.quantity}
+                            onChange={(e) =>
+                              updateCartItem(item.tempId, 'quantity', e.target.value)
+                            }
+                            type="number"
+                            min="1"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                          />
+
+                          <input
+                            value={item.unitPrice}
+                            onChange={(e) =>
+                              updateCartItem(item.tempId, 'unitPrice', e.target.value)
+                            }
+                            type="number"
+                            min="0"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                          />
+
+                          <input
+                            value={item.discountAmount}
+                            onChange={(e) =>
+                              updateCartItem(item.tempId, 'discountAmount', e.target.value)
+                            }
+                            type="number"
+                            min="0"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                          />
+
+                          <div className="flex items-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900">
+                            {item.sellCurrency
+                              ? formatMoneyWithCurrency(lineTotal, item.sellCurrency)
+                              : money(lineTotal)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-slate-500">
+                  Savat bo‘sh
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-4 flex items-center gap-2">
+                <Wallet size={18} className="text-slate-500" />
+                <h2 className="text-lg font-black text-slate-900">To‘lov</h2>
+              </div>
+
+              <div className="space-y-4">
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
                     Izoh
                   </label>
-                  <input
+                  <textarea
+                    rows={3}
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                    placeholder="Masalan: tezkor savdo"
+                    placeholder="Ixtiyoriy"
                   />
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <CreditCard size={16} className="text-slate-500" />
-                    <p className="text-sm font-bold text-slate-900">To‘lovlar</p>
+                <div>
+                  <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <BadgePercent size={16} />
+                    Umumiy chegirma
+                  </label>
+                  <input
+                    value={totalDiscount}
+                    onChange={(e) => setTotalDiscount(e.target.value)}
+                    type="number"
+                    min="0"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                      <CreditCard size={16} />
+                      To‘lovlar
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={addPaymentRow}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <Plus size={14} />
+                      Qator qo‘shish
+                    </button>
                   </div>
 
                   <div className="space-y-3">
                     {payments.map((payment) => (
-                      <div key={payment.id} className="grid gap-3 md:grid-cols-[1fr_0.8fr_auto]">
+                      <div key={payment.id} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                         <select
                           value={payment.cashboxId}
                           onChange={(e) =>
                             updatePaymentRow(payment.id, 'cashboxId', e.target.value)
                           }
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
                         >
                           <option value="">Kassa tanlang</option>
-                          {cashboxes.map((cashbox) => (
+                          {filteredCashboxes.map((cashbox) => (
                             <option key={cashbox.id} value={cashbox.id}>
-                              {cashbox.name}
+                              {cashbox.name} • {getCurrencyLabel(cashbox.currency)}
                             </option>
                           ))}
                         </select>
 
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
                           value={payment.amount}
                           onChange={(e) =>
                             updatePaymentRow(payment.id, 'amount', e.target.value)
                           }
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                          placeholder="To‘lov summasi"
+                          type="number"
+                          min="0"
+                          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                          placeholder="0"
                         />
 
                         <button
                           type="button"
                           onClick={() => removePaymentRow(payment.id)}
-                          className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+                          className="inline-flex items-center justify-center rounded-2xl border border-rose-200 px-4 py-3 text-rose-600 transition hover:bg-rose-50"
                         >
                           <Trash2 size={16} />
                         </button>
                       </div>
                     ))}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={addPaymentRow}
-                    className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    <Plus size={14} />
-                    To‘lov qo‘shish
-                  </button>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Jami summa</span>
-                      <span className="font-semibold text-slate-900">{money(subtotalAmount)}</span>
+                      <span className="font-semibold text-slate-900">
+                        {saleCurrency
+                          ? formatMoneyWithCurrency(subtotalAmount, saleCurrency)
+                          : money(subtotalAmount)}
+                      </span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Tovar chegirmalari</span>
+                      <span className="text-slate-500">Item chegirma</span>
                       <span className="font-semibold text-rose-600">
-                        - {money(itemDiscountTotal)}
+                        {saleCurrency
+                          ? formatMoneyWithCurrency(itemDiscountTotal, saleCurrency)
+                          : money(itemDiscountTotal)}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Umumiy chegirma</span>
                       <span className="font-semibold text-rose-600">
-                        - {money(generalDiscount)}
+                        {saleCurrency
+                          ? formatMoneyWithCurrency(generalDiscount, saleCurrency)
+                          : money(generalDiscount)}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Kiritilgan to‘lov</span>
+                      <span className="text-slate-500">To‘langan</span>
                       <span className="font-semibold text-emerald-600">
-                        {money(paidAmount)}
+                        {saleCurrency
+                          ? formatMoneyWithCurrency(paidAmount, saleCurrency)
+                          : money(paidAmount)}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Qolgan to‘lov</span>
+                      <span className="text-slate-500">Qolgan</span>
                       <span className="font-semibold text-amber-600">
-                        {money(remainingAmount)}
+                        {saleCurrency
+                          ? formatMoneyWithCurrency(remainingAmount, saleCurrency)
+                          : money(remainingAmount)}
                       </span>
                     </div>
 
@@ -889,7 +1027,9 @@ export default function CashSalePage() {
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-slate-900">Yakuniy summa</span>
                         <span className="text-lg font-black text-slate-900">
-                          {money(grandTotal)}
+                          {saleCurrency
+                            ? formatMoneyWithCurrency(grandTotal, saleCurrency)
+                            : money(grandTotal)}
                         </span>
                       </div>
                     </div>
@@ -899,141 +1039,34 @@ export default function CashSalePage() {
                 <button
                   type="button"
                   onClick={submitSale}
-                  disabled={saving || !cart.length || !isFullyPaid}
+                  disabled={saving || !cart.length}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
                 >
-                  {saving ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Receipt size={16} />
-                  )}
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
                   {saving ? 'Saqlanmoqda...' : 'Savdoni yakunlash'}
                 </button>
-
-                {!isFullyPaid ? (
-                  <p className="text-center text-xs font-medium text-amber-600">
-                    Savdoni yakunlash uchun to‘lov to‘liq kiritilishi kerak
-                  </p>
-                ) : null}
               </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-black text-slate-900">Savat</h2>
-                <p className="mt-1 text-sm text-slate-500">Tanlangan tovarlar</p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-                {cart.length} ta
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {cart.length > 0 ? (
-                cart.map((item) => {
-                  const lineSubtotal = roundMoney(
-                    toNumber(item.quantity) * toNumber(item.unitPrice)
-                  );
-                  const lineDiscount = toNumber(item.discountAmount);
-                  const lineTotal = roundMoney(lineSubtotal - lineDiscount);
-
-                  return (
-                    <div
-                      key={item.tempId}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-slate-900">{item.productName}</p>
-                          <p className="text-xs text-slate-500">
-                            {item.brand || 'Brend yo‘q'} • {item.sizeName} • {item.warehouseName}
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-400">
-                            Kirim sanasi:{' '}
-                            {item.batchCreatedAt
-                              ? new Date(item.batchCreatedAt).toLocaleDateString('uz-UZ')
-                              : '-'}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => removeCartItem(item.tempId)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-
-                      <div className="mt-3 grid gap-3 md:grid-cols-4">
-                        <div>
-                          <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                            Soni
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max={item.maxQuantity}
-                            value={item.quantity}
-                            onChange={(e) => updateCartItem(item.tempId, 'quantity', e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                            Narxi
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.unitPrice}
-                            onChange={(e) => updateCartItem(item.tempId, 'unitPrice', e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                            Chegirma
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.discountAmount}
-                            onChange={(e) =>
-                              updateCartItem(item.tempId, 'discountAmount', e.target.value)
-                            }
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                            Jami
-                          </label>
-                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900">
-                            {money(lineTotal)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="py-10 text-center text-sm text-slate-500">
-                  Savat bo‘sh
-                </div>
-              )}
             </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <ImagePreviewModal
+        open={previewOpen}
+        imageUrl={previewImage}
+        title={previewTitle}
+        onClose={() => {
+          setPreviewOpen(false);
+          setPreviewImage('');
+          setPreviewTitle('');
+        }}
+      />
+
+      <SaleReceiptModal
+        open={receiptOpen}
+        sale={lastSale}
+        onClose={() => setReceiptOpen(false)}
+      />
+    </>
   );
 }

@@ -1,6 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiFetch } from '../../../lib/api';
+
+function money(value) {
+  return Number(value || 0).toLocaleString('uz-UZ');
+}
+
+function formatMoneyWithCurrency(value, currency) {
+  if (!currency) return money(value);
+  return `${money(value)} ${currency.code}`;
+}
+
+function getCurrencyLabel(currency) {
+  if (!currency) return '-';
+  return `${currency.code}${currency.symbol ? ` (${currency.symbol})` : ''}`;
+}
 
 export default function SupplierPaymentModal({
   open,
@@ -20,6 +34,17 @@ export default function SupplierPaymentModal({
   const [loadingCashboxes, setLoadingCashboxes] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const selectedLedgerEntry = useMemo(() => {
+    return ledgerEntries.find((entry) => entry.id === form.ledgerEntryId) || null;
+  }, [ledgerEntries, form.ledgerEntryId]);
+
+  const filteredCashboxes = useMemo(() => {
+    if (!selectedLedgerEntry?.currencyId) return cashboxes;
+    return cashboxes.filter(
+      (cashbox) => cashbox.currencyId === selectedLedgerEntry.currencyId
+    );
+  }, [cashboxes, selectedLedgerEntry]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -38,13 +63,28 @@ export default function SupplierPaymentModal({
     loadCashboxes();
 
     setForm({
-      ledgerEntryId: '',
+      ledgerEntryId: ledgerEntries[0]?.id || '',
       source: 'CASHBOX',
       cashboxId: '',
       amount: '',
       note: '',
     });
-  }, [open]);
+  }, [open, ledgerEntries]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (form.source !== 'CASHBOX') return;
+
+    const exists = filteredCashboxes.some((cashbox) => cashbox.id === form.cashboxId);
+
+    if (!exists) {
+      setForm((prev) => ({
+        ...prev,
+        cashboxId: filteredCashboxes[0]?.id || '',
+      }));
+    }
+  }, [open, form.source, filteredCashboxes, form.cashboxId]);
 
   if (!open || !supplier) return null;
 
@@ -52,6 +92,11 @@ export default function SupplierPaymentModal({
     e.preventDefault();
 
     const amount = Number(form.amount);
+
+    if (!form.ledgerEntryId) {
+      toast.error('Qarz yozuvini tanlang');
+      return;
+    }
 
     if (Number.isNaN(amount) || amount <= 0) {
       toast.error("To'lov summasi to'g'ri bo'lishi kerak");
@@ -63,13 +108,22 @@ export default function SupplierPaymentModal({
       return;
     }
 
+    if (
+      form.source === 'CASHBOX' &&
+      selectedLedgerEntry?.currencyId &&
+      !filteredCashboxes.some((cashbox) => cashbox.id === form.cashboxId)
+    ) {
+      toast.error("Tanlangan kassa qarz valyutasiga mos emas");
+      return;
+    }
+
     setSaving(true);
     try {
-      await apiFetch('/supplier-payments/pay', {
+      await apiFetch('/supplier-payments', {
         method: 'POST',
         body: JSON.stringify({
           supplierId: supplier.id,
-          ledgerEntryId: form.ledgerEntryId || undefined,
+          ledgerEntryId: form.ledgerEntryId,
           source: form.source,
           cashboxId: form.source === 'CASHBOX' ? form.cashboxId : undefined,
           amount,
@@ -118,18 +172,32 @@ export default function SupplierPaymentModal({
               }
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
             >
-              <option value="">Umumiy qarz bo‘yicha</option>
+              <option value="">Qarz yozuvini tanlang</option>
               {ledgerEntries.map((entry) => {
-                const remaining = (entry.totalAmount || 0) - (entry.paidAmount || 0);
+                const remaining =
+                  Number(entry.dueAmount ?? ((entry.totalAmount || 0) - (entry.paidAmount || 0)));
 
                 return (
                   <option key={entry.id} value={entry.id}>
-                    {new Date(entry.createdAt).toLocaleDateString('uz-UZ')} — Qolgan: {remaining.toLocaleString('uz-UZ')}
+                    {new Date(entry.createdAt).toLocaleDateString('uz-UZ')} —{' '}
+                    {entry.currency?.code || '-'} — Qolgan:{' '}
+                    {formatMoneyWithCurrency(remaining, entry.currency)}
                   </option>
                 );
               })}
             </select>
           </div>
+
+          {selectedLedgerEntry?.currency ? (
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+                To‘lov valyutasi
+              </p>
+              <p className="mt-1 text-sm font-bold text-slate-900">
+                {getCurrencyLabel(selectedLedgerEntry.currency)}
+              </p>
+            </div>
+          ) : null}
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
@@ -182,12 +250,18 @@ export default function SupplierPaymentModal({
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-50"
               >
                 <option value="">Kassa tanlang</option>
-                {cashboxes.map((cashbox) => (
+                {filteredCashboxes.map((cashbox) => (
                   <option key={cashbox.id} value={cashbox.id}>
-                    {cashbox.name} — {Number(cashbox.balance || 0).toLocaleString('uz-UZ')} {cashbox.currency?.code || ''}
+                    {cashbox.name} — {money(cashbox.balance || 0)} {cashbox.currency?.code || ''}
                   </option>
                 ))}
               </select>
+
+              {selectedLedgerEntry?.currencyId && filteredCashboxes.length === 0 ? (
+                <p className="mt-2 text-xs font-medium text-rose-600">
+                  Bu valyuta uchun mos kassa topilmadi
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -217,7 +291,7 @@ export default function SupplierPaymentModal({
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || (form.source === 'CASHBOX' && selectedLedgerEntry?.currencyId && filteredCashboxes.length === 0)}
               className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
             >
               {saving ? 'Saqlanmoqda...' : "To'lov qilish"}

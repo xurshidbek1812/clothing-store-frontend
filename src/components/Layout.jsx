@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -16,6 +16,7 @@ import {
   LogOut,
   Store,
   UserCircle2,
+  CheckCircle2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,8 +30,7 @@ const menuItems = [
       { title: "Boshqa kassaga chiqim", path: "/cash/transfer-out" },
       { title: "Boshqa kassadan kirim", path: "/cash/transfer-in" },
       { title: "Xarajatga pul chiqim", path: "/cash/expense" },
-      { title: "Barcha kassa amaliyotlari", path: "/cash/transactions" },
-      { title: "Kassalarni boshqarish", path: "/cash/manage" },
+      { title: "Kassa o'tkazmalari", path: "/cash/transactions" },
       { title: "Kassalar qoldig'i", path: "/cash/balances" },
       { title: "Valyuta ayriboshlash", path: "/cash/exchange" },
     ],
@@ -43,6 +43,7 @@ const menuItems = [
       { title: "Naqd savdo", path: "/sales/cash" },
       { title: "Savdolar tarixi", path: "/sales/history" },
       { title: "Nasiya savdo", path: "/sales/credit" },
+      { title: "Mijozlar qarzdorligi", path: "/customers/balances" },
       { title: "Tovar qaytarish", path: "/sales/returns" },
     ],
   },
@@ -56,7 +57,6 @@ const menuItems = [
       { title: "Boshqa omborga chiqim", path: "/warehouse/out-to-warehouse" },
       { title: "Taminotchidan tovar kirimi", path: "/warehouse/in-from-supplier" },
       { title: "Taminotchiga tovar qaytarish", path: "/warehouse/return-to-supplier" },
-      { title: "Mijozdan tovar kirimi", path: "/warehouse/in-from-customer" },
       { title: "Tovar qoldig'i", path: "/warehouse/balances" },
       { title: "Sanoq", path: "/warehouse/count" },
       { title: "Sanoq tarixi", path: "/warehouse/count-history" },
@@ -87,7 +87,7 @@ const menuItems = [
   {
     title: "References",
     icon: <BookOpen size={20} />,
-    roles: ["DIRECTOR"],
+    roles: ['DIRECTOR'],
     children: [
       { title: "Kategoriyalar", path: "/references/categories" },
       { title: "Xarajat moddalari", path: "/references/expense-categories" },
@@ -105,15 +105,27 @@ const menuItems = [
     icon: <Settings size={20} />,
     children: [
       { title: "Profil sozlamalari", path: "/settings/profile" },
-      { title: "Xodimlar boshqaruvi", path: "/settings/employees", roles: ["DIRECTOR"] },
+      { title: "Xodimlar boshqaruvi", path: "/settings/employees", roles: ['DIRECTOR'] },
+      { title: "Do'konlar boshqaruvi", path: "/settings/shops", roles: ['DIRECTOR'] },
     ],
   },
 ];
 
 export default function Layout() {
-  const { user, stores, activeStoreId, selectedStore, setActiveStoreId, logout } = useAuth();
+  const {
+    user,
+    stores = [],
+    activeStoreId,
+    selectedStore,
+    setActiveStoreId,
+    logout,
+  } = useAuth();
+
   const navigate = useNavigate();
   const location = useLocation();
+
+  const previousStoreIdRef = useRef(activeStoreId || '');
+  const [showStoreSwitchNotice, setShowStoreSwitchNotice] = useState(false);
 
   const filteredMenuItems = useMemo(() => {
     return menuItems
@@ -153,6 +165,27 @@ export default function Layout() {
       setOpenMenu(activeGroup);
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    const previousStoreId = previousStoreIdRef.current;
+
+    if (
+      previousStoreId &&
+      activeStoreId &&
+      previousStoreId !== activeStoreId
+    ) {
+      setShowStoreSwitchNotice(true);
+
+      const timer = setTimeout(() => {
+        setShowStoreSwitchNotice(false);
+      }, 900);
+
+      previousStoreIdRef.current = activeStoreId;
+      return () => clearTimeout(timer);
+    }
+
+    previousStoreIdRef.current = activeStoreId || '';
+  }, [activeStoreId]);
 
   const toggleMenu = (title) => {
     setOpenMenu((prev) => (prev === title ? null : title));
@@ -270,6 +303,21 @@ export default function Layout() {
                 <p className="mt-1 text-sm text-slate-500">
                   {selectedStore?.address || "Store bo'yicha ishlash oynasi"}
                 </p>
+
+                <AnimatePresence>
+                  {showStoreSwitchNotice ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                      transition={{ duration: 0.28, ease: 'easeOut' }}
+                      className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700"
+                    >
+                      <CheckCircle2 size={14} />
+                      Do'kon almashtirildi
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               </div>
 
               <div className="flex justify-center">
@@ -282,8 +330,12 @@ export default function Layout() {
                   <select
                     value={activeStoreId || ''}
                     onChange={(e) => setActiveStoreId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-500"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-500"
                   >
+                    {!stores.length ? (
+                      <option value="">Do'kon topilmadi</option>
+                    ) : null}
+
                     {stores.map((store) => (
                       <option key={store.id} value={store.id}>
                         {store.name}
@@ -317,11 +369,11 @@ export default function Layout() {
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           <AnimatePresence mode="wait">
             <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.22, ease: 'easeOut' }}
+              key={`${location.pathname}-${activeStoreId || 'no-store'}`}
+              initial={{ opacity: 0, y: 14, scale: 0.995 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.995 }}
+              transition={{ duration: 0.26, ease: 'easeOut' }}
               className="h-full"
             >
               <Outlet />

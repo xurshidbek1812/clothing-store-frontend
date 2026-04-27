@@ -7,6 +7,7 @@ import {
   Check,
   X,
   Loader2,
+  Pencil,
 } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -15,6 +16,30 @@ import SupplierInDetailsModal from './components/SupplierInDetailsModal';
 
 function money(value) {
   return Number(value || 0).toLocaleString('uz-UZ');
+}
+
+function formatMoneyWithCurrency(value, currency) {
+  if (!currency) return money(value);
+  return `${money(value)} ${currency.code}`;
+}
+
+function summarizeTotalsByCurrency(items = []) {
+  const map = new Map();
+
+  for (const row of items) {
+    const currencyId = row.costCurrencyId;
+    if (!currencyId) continue;
+
+    const amount = Number(row.quantity || 0) * Number(row.costPrice || 0);
+    const prev = map.get(currencyId) || { amount: 0, currency: row.costCurrency || null };
+
+    map.set(currencyId, {
+      amount: prev.amount + amount,
+      currency: row.costCurrency || prev.currency,
+    });
+  }
+
+  return Array.from(map.values());
 }
 
 function getStatusLabel(status) {
@@ -58,6 +83,7 @@ export default function SupplierInPage() {
   const [loading, setLoading] = useState(true);
 
   const [formOpen, setFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -66,7 +92,8 @@ export default function SupplierInPage() {
   const [approvingId, setApprovingId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
 
-  const canApprove = user?.role === 'DIRECTOR';
+  const canApprove = user?.role === 'DIRECTOR' || user?.role === 'OWNER';
+  const canEditPending = user?.role === 'DIRECTOR' || user?.role === 'OWNER';
 
   const loadData = async (page = pagination.page, currentStatus = status) => {
     setLoading(true);
@@ -111,61 +138,67 @@ export default function SupplierInPage() {
     }
   };
 
-  const refreshSelected = async () => {
-    if (!selectedItem?.id) return;
+  const openEdit = async (itemId) => {
+    try {
+      const res = await apiFetch(`/supplier-ins/${itemId}`);
 
-    const res = await apiFetch(`/supplier-ins/${selectedItem.id}`);
-    setSelectedItem(res);
-    await loadData(pagination.page, status);
+      if (res?.status !== 'PENDING') {
+        toast.error('Faqat jarayondagi kirimni tahrirlash mumkin');
+        return;
+      }
+
+      setEditingItem(res);
+      setFormOpen(true);
+    } catch (error) {
+      toast.error(error.message || 'Tahrirlash uchun hujjat yuklanmadi');
+    }
   };
 
   const handleApprove = async (itemId) => {
-  setApprovingId(itemId);
-  try {
-    await apiFetch(`/supplier-ins/${itemId}/approve`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
+    setApprovingId(itemId);
+    try {
+      await apiFetch(`/supplier-ins/${itemId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
 
-    toast.success('Kirim hujjati tasdiqlandi');
+      toast.success('Kirim hujjati tasdiqlandi');
 
-    // modal ochiq bo'lsa yopamiz
-    if (selectedItem?.id === itemId) {
-      setDetailsOpen(false);
-      setSelectedItem(null);
+      if (selectedItem?.id === itemId) {
+        setDetailsOpen(false);
+        setSelectedItem(null);
+      }
+
+      await loadData(pagination.page, status);
+    } catch (error) {
+      toast.error(error.message || 'Tasdiqlashda xatolik');
+    } finally {
+      setApprovingId(null);
     }
+  };
 
-    await loadData(pagination.page, status);
-  } catch (error) {
-    toast.error(error.message || 'Tasdiqlashda xatolik');
-  } finally {
-    setApprovingId(null);
-  }
-};
+  const handleReject = async (itemId) => {
+    setRejectingId(itemId);
+    try {
+      await apiFetch(`/supplier-ins/${itemId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
 
-const handleReject = async (itemId) => {
-  setRejectingId(itemId);
-  try {
-    await apiFetch(`/supplier-ins/${itemId}/reject`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
+      toast.success('Kirim hujjati rad etildi');
 
-    toast.success('Kirim hujjati rad etildi');
+      if (selectedItem?.id === itemId) {
+        setDetailsOpen(false);
+        setSelectedItem(null);
+      }
 
-    // modal ochiq bo'lsa yopamiz
-    if (selectedItem?.id === itemId) {
-      setDetailsOpen(false);
-      setSelectedItem(null);
+      await loadData(pagination.page, status);
+    } catch (error) {
+      toast.error(error.message || 'Rad etishda xatolik');
+    } finally {
+      setRejectingId(null);
     }
-
-    await loadData(pagination.page, status);
-  } catch (error) {
-    toast.error(error.message || 'Rad etishda xatolik');
-  } finally {
-    setRejectingId(null);
-  }
-};
+  };
 
   return (
     <div className="space-y-4">
@@ -186,7 +219,10 @@ const handleReject = async (itemId) => {
           </div>
 
           <button
-            onClick={() => setFormOpen(true)}
+            onClick={() => {
+              setEditingItem(null);
+              setFormOpen(true);
+            }}
             className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
           >
             <Plus size={16} />
@@ -271,15 +307,11 @@ const handleReject = async (itemId) => {
                 <tbody>
                   {items.length > 0 ? (
                     items.map((item) => {
-                      const totalAmount = (item.items || []).reduce(
-                        (sum, row) =>
-                          sum + Number(row.quantity || 0) * Number(row.costPrice || 0),
-                        0
-                      );
-
+                      const totals = summarizeTotalsByCurrency(item.items || []);
                       const isApproving = approvingId === item.id;
                       const isRejecting = rejectingId === item.id;
                       const actionLoading = isApproving || isRejecting;
+                      const canEditThis = canEditPending && item.status === 'PENDING';
 
                       return (
                         <tr key={item.id} className="border-b border-slate-50">
@@ -307,7 +339,17 @@ const handleReject = async (itemId) => {
                           <td className="py-3 text-slate-700">{item.items?.length || 0}</td>
 
                           <td className="py-3 font-semibold text-slate-900">
-                            {money(totalAmount)}
+                            <div className="space-y-1">
+                              {totals.length > 0 ? (
+                                totals.map((row, idx) => (
+                                  <div key={idx}>
+                                    {formatMoneyWithCurrency(row.amount, row.currency)}
+                                  </div>
+                                ))
+                              ) : (
+                                <div>0</div>
+                              )}
+                            </div>
                           </td>
 
                           <td className="py-3">
@@ -334,6 +376,16 @@ const handleReject = async (itemId) => {
                                   <Eye size={16} />
                                 )}
                               </button>
+
+                              {canEditThis ? (
+                                <button
+                                  onClick={() => openEdit(item.id)}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600 transition hover:bg-blue-100"
+                                  title="Tahrirlash"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                              ) : null}
 
                               {canApprove && item.status === 'PENDING' ? (
                                 <>
@@ -420,8 +472,12 @@ const handleReject = async (itemId) => {
 
       <SupplierInFormModal
         open={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={() => {
+          setFormOpen(false);
+          setEditingItem(null);
+        }}
         onSuccess={() => loadData(1, status)}
+        editingItem={editingItem}
       />
 
       <SupplierInDetailsModal
@@ -433,9 +489,15 @@ const handleReject = async (itemId) => {
         item={selectedItem}
         onApprove={() => handleApprove(selectedItem.id)}
         onReject={() => handleReject(selectedItem.id)}
+        onEdit={() => {
+          setDetailsOpen(false);
+          setEditingItem(selectedItem);
+          setFormOpen(true);
+        }}
         approving={approvingId === selectedItem?.id}
         rejecting={rejectingId === selectedItem?.id}
         canApprove={canApprove}
+        canEditPending={canEditPending}
       />
     </div>
   );

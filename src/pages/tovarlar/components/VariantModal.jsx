@@ -10,16 +10,33 @@ export default function VariantModal({
 }) {
   if (!open) return null;
 
+  const selectedSizeIds = form.sizeIds || [];
+  const existingVariantSizeIds = (product?.variants || []).map((variant) => variant.sizeId);
+
+  const toggleSize = (sizeId) => {
+    setForm((prev) => {
+      const current = prev.sizeIds || [];
+      const exists = current.includes(sizeId);
+
+      return {
+        ...prev,
+        sizeIds: exists
+          ? current.filter((id) => id !== sizeId)
+          : [...current, sizeId],
+      };
+    });
+  };
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white shadow-2xl">
+      <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div>
             <h3 className="text-xl font-black tracking-tight text-slate-900">
-              Variant qo‘shish
+              Razmerlarni tanlash
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              {product?.name || 'Tovar'} uchun razmer tanlang. Barcode avtomatik yaratiladi.
+              {product?.name || 'Tovar'} uchun kerakli razmerlarni belgilang
             </p>
           </div>
 
@@ -31,29 +48,40 @@ export default function VariantModal({
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4 px-6 py-5">
+        <form onSubmit={onSubmit} className="space-y-5 px-6 py-5">
           <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
-              Razmer
+            <label className="mb-3 block text-sm font-semibold text-slate-700">
+              Razmerlar
             </label>
-            <select
-              value={form.sizeId}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, sizeId: e.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-            >
-              <option value="">Razmer tanlang</option>
-              {sizes.map((size) => (
-                <option key={size.id} value={size.id}>
-                  {size.name}
-                </option>
-              ))}
-            </select>
-          </div>
 
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-            Barcode system tomonidan avtomatik yaratiladi.
+            <div className="flex flex-wrap gap-2">
+              {sizes.map((size) => {
+                const selected = selectedSizeIds.includes(size.id);
+                const alreadyExists = existingVariantSizeIds.includes(size.id);
+
+                return (
+                  <button
+                    key={size.id}
+                    type="button"
+                    onClick={() => toggleSize(size.id)}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                      selected
+                        ? alreadyExists
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-900 text-white'
+                        : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {size.name}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 space-y-1 text-xs text-slate-500">
+              <p>Ko‘k — allaqachon mavjud razmer</p>
+              <p>Qora — tanlangan razmer</p>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
@@ -70,7 +98,7 @@ export default function VariantModal({
               disabled={saving}
               className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
             >
-              {saving ? 'Saqlanmoqda...' : "Qo‘shish"}
+              {saving ? 'Saqlanmoqda...' : 'Saqlash'}
             </button>
           </div>
         </form>

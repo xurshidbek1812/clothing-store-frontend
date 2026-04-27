@@ -1,9 +1,35 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Package2, ScanLine, ImagePlus, Trash2 } from 'lucide-react';
+import {
+  Plus,
+  Pencil,
+  Package2,
+  ScanLine,
+  ImagePlus,
+  Trash2,
+  Star,
+  Eye,
+} from 'lucide-react';
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
 import { API_BASE_URL, apiFetch } from '../../lib/api';
 import ProductModal from './components/ProductModal';
 import VariantModal from './components/VariantModal';
+import ImagePreviewModal from '../../components/ImagePreviewModal';
+import ProductDetailsModal from './components/ProductDetailsModal';
 
 const initialProductForm = {
   name: '',
@@ -15,13 +41,50 @@ const initialProductForm = {
 };
 
 const initialVariantForm = {
-  sizeId: '',
+  sizeIds: [],
 };
+
+const PRODUCTS_WAREHOUSE_STORAGE_KEY = 'clothing_shop_products_warehouse_id';
+
+function SortableVariantItem({ variant }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: variant.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`cursor-grab rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 transition active:cursor-grabbing ${
+        isDragging ? 'z-10 bg-white shadow-lg ring-2 ring-blue-200' : 'hover:bg-slate-100'
+      }`}
+      title="Bosib turib joyini almashtiring"
+    >
+      {variant.size?.name || '-'}
+    </div>
+  );
+}
 
 export default function ProductsPage() {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [sizes, setSizes] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [warehouseId, setWarehouseId] = useState('');
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -36,18 +99,116 @@ export default function ProductsPage() {
   const [variantForm, setVariantForm] = useState(initialVariantForm);
   const [savingVariant, setSavingVariant] = useState(false);
 
-  const loadData = async () => {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState('');
+  const [previewTitle, setPreviewTitle] = useState('');
+
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsProduct, setDetailsProduct] = useState(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    })
+  );
+
+  const resolveWarehouseId = (preferredWarehouseId, activeWarehouses) => {
+    if (
+      preferredWarehouseId &&
+      activeWarehouses.some((warehouse) => warehouse.id === preferredWarehouseId)
+    ) {
+      return preferredWarehouseId;
+    }
+
+    return activeWarehouses[0]?.id || '';
+  };
+
+  const saveWarehouseId = (nextWarehouseId) => {
+    if (nextWarehouseId) {
+      localStorage.setItem(PRODUCTS_WAREHOUSE_STORAGE_KEY, nextWarehouseId);
+    } else {
+      localStorage.removeItem(PRODUCTS_WAREHOUSE_STORAGE_KEY);
+    }
+  };
+
+  const loadStaticData = async (preferredWarehouseId = '') => {
+    const [categoriesRes, sizesRes, warehousesRes] = await Promise.all([
+      apiFetch('/reference/categories'),
+      apiFetch('/reference/sizes'),
+      apiFetch('/warehouses'),
+    ]);
+
+    const activeWarehouses = (warehousesRes || []).filter(
+      (warehouse) => warehouse.isActive
+    );
+
+    const savedWarehouseId =
+      localStorage.getItem(PRODUCTS_WAREHOUSE_STORAGE_KEY) || '';
+
+    const resolvedWarehouseId = resolveWarehouseId(
+      preferredWarehouseId || savedWarehouseId,
+      activeWarehouses
+    );
+
+    setCategories(categoriesRes || []);
+    setSizes(sizesRes || []);
+    setWarehouses(activeWarehouses);
+    setWarehouseId(resolvedWarehouseId);
+    saveWarehouseId(resolvedWarehouseId);
+
+    return resolvedWarehouseId;
+  };
+
+  const loadProducts = async (targetWarehouseId, currentSearch = search) => {
+    const query = `/products?${
+      currentSearch.trim()
+        ? `search=${encodeURIComponent(currentSearch.trim())}&`
+        : ''
+    }${targetWarehouseId ? `warehouseId=${encodeURIComponent(targetWarehouseId)}` : ''}`;
+
+    const productsRes = await apiFetch(query);
+    setItems(productsRes || []);
+  };
+
+  const initPage = async () => {
     setLoading(true);
     try {
-      const [productsRes, categoriesRes, sizesRes] = await Promise.all([
-        apiFetch(`/products${search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''}`),
-        apiFetch('/reference/categories'),
-        apiFetch('/reference/sizes'),
-      ]);
+      const savedWarehouseId =
+        localStorage.getItem(PRODUCTS_WAREHOUSE_STORAGE_KEY) || '';
+      const resolvedWarehouseId = await loadStaticData(savedWarehouseId);
+      await loadProducts(resolvedWarehouseId, search);
+    } catch (error) {
+      toast.error(error.message || "Ma'lumotlarni yuklashda xatolik");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      setItems(productsRes || []);
-      setCategories(categoriesRes || []);
-      setSizes(sizesRes || []);
+  const refreshAll = async (preferredWarehouseId = warehouseId) => {
+    setLoading(true);
+    try {
+      const resolvedWarehouseId = await loadStaticData(preferredWarehouseId);
+      await loadProducts(resolvedWarehouseId, search);
+    } catch (error) {
+      toast.error(error.message || "Ma'lumotlarni yangilashda xatolik");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    initPage();
+  }, []);
+
+  const handleWarehouseChange = async (nextWarehouseId) => {
+    setWarehouseId(nextWarehouseId);
+    saveWarehouseId(nextWarehouseId);
+
+    setLoading(true);
+    try {
+      await loadProducts(nextWarehouseId, search);
     } catch (error) {
       toast.error(error.message || 'Tovarlar yuklanmadi');
     } finally {
@@ -55,13 +216,18 @@ export default function ProductsPage() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const handleSearch = async (e) => {
     e?.preventDefault?.();
-    loadData();
+    if (!warehouseId) return;
+
+    setLoading(true);
+    try {
+      await loadProducts(warehouseId, search);
+    } catch (error) {
+      toast.error(error.message || 'Tovarlar yuklanmadi');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const openCreate = () => {
@@ -123,7 +289,7 @@ export default function ProductsPage() {
       }
 
       closeProductModal();
-      loadData();
+      await refreshAll();
     } catch (error) {
       toast.error(error.message || 'Saqlashda xatolik');
     } finally {
@@ -133,7 +299,9 @@ export default function ProductsPage() {
 
   const openVariantModal = (product) => {
     setVariantProduct(product);
-    setVariantForm(initialVariantForm);
+    setVariantForm({
+      sizeIds: (product.variants || []).map((variant) => variant.sizeId),
+    });
     setVariantOpen(true);
   };
 
@@ -146,34 +314,92 @@ export default function ProductsPage() {
   const submitVariant = async (e) => {
     e.preventDefault();
 
-    const payload = {
-      sizeId: variantForm.sizeId,
-    };
-
     if (!variantProduct?.id) {
       toast.error('Tovar topilmadi');
       return;
     }
 
-    if (!payload.sizeId) {
-      toast.error('Razmer tanlang');
+    const selectedSizeIds = variantForm.sizeIds || [];
+    const existingVariants = variantProduct.variants || [];
+
+    const existingSizeIds = new Set(existingVariants.map((variant) => variant.sizeId));
+    const newSizeIds = selectedSizeIds.filter((sizeId) => !existingSizeIds.has(sizeId));
+    const removedVariants = existingVariants.filter(
+      (variant) => !selectedSizeIds.includes(variant.sizeId)
+    );
+
+    if (!selectedSizeIds.length) {
+      toast.error('Kamida bitta razmer tanlang');
       return;
     }
 
     setSavingVariant(true);
     try {
-      await apiFetch(`/products/${variantProduct.id}/variants`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      for (const sizeId of newSizeIds) {
+        await apiFetch(`/products/${variantProduct.id}/variants`, {
+          method: 'POST',
+          body: JSON.stringify({ sizeId }),
+        });
+      }
 
-      toast.success("Variant qo‘shildi");
+      for (const variant of removedVariants) {
+        await apiFetch(`/products/${variantProduct.id}/variants/${variant.id}`, {
+          method: 'DELETE',
+        });
+      }
+
+      if (!newSizeIds.length && !removedVariants.length) {
+        toast.success("O'zgarish yo'q");
+      } else {
+        toast.success('Razmerlar yangilandi');
+      }
+
       closeVariantModal();
-      loadData();
+      await refreshAll();
     } catch (error) {
-      toast.error(error.message || "Variant qo‘shishda xatolik");
+      toast.error(error.message || "Razmerlarni yangilashda xatolik");
     } finally {
       setSavingVariant(false);
+    }
+  };
+
+  const handleVariantDragEnd = async (product, event) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    const variants = [...(product.variants || [])];
+    const oldIndex = variants.findIndex((v) => v.id === active.id);
+    const newIndex = variants.findIndex((v) => v.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(variants, oldIndex, newIndex);
+
+    try {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === product.id
+            ? {
+                ...item,
+                variants: reordered,
+              }
+            : item
+        )
+      );
+
+      await apiFetch(`/products/${product.id}/variants/reorder`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          variantIds: reordered.map((v) => v.id),
+        }),
+      });
+
+      toast.success('Razmerlar tartibi yangilandi');
+      await refreshAll();
+    } catch (error) {
+      toast.error(error.message || 'Razmer tartibini saqlashda xatolik');
+      await refreshAll();
     }
   };
 
@@ -204,22 +430,35 @@ export default function ProductsPage() {
       }
 
       toast.success(data.message || 'Rasm yuklandi');
-      await loadData();
+      await refreshAll();
     } catch (error) {
       toast.error(error.message || 'Rasm yuklashda xatolik');
     }
   };
 
-  const handleDeleteImage = async (productId) => {
+  const handleDeleteImage = async (imageId) => {
     try {
-      const res = await apiFetch(`/products/${productId}/image`, {
+      const res = await apiFetch(`/products/images/${imageId}`, {
         method: 'DELETE',
       });
 
       toast.success(res.message || 'Rasm o‘chirildi');
-      await loadData();
+      await refreshAll();
     } catch (error) {
       toast.error(error.message || 'Rasm o‘chirishda xatolik');
+    }
+  };
+
+  const handleSetPrimary = async (imageId) => {
+    try {
+      const res = await apiFetch(`/products/images/${imageId}/primary`, {
+        method: 'PATCH',
+      });
+
+      toast.success(res.message || 'Asosiy rasm belgilandi');
+      await refreshAll();
+    } catch (error) {
+      toast.error(error.message || 'Asosiy rasmni belgilashda xatolik');
     }
   };
 
@@ -238,18 +477,31 @@ export default function ProductsPage() {
                 Tovarlar
               </h1>
               <p className="mt-1 text-sm text-slate-500">
-                Tovarlar ro‘yxati, rasm, kategoriya va variantlar
+                Ombor bo‘yicha tovarlar, rasmlar va razmerlar
               </p>
             </div>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
+            <select
+              value={warehouseId}
+              onChange={(e) => handleWarehouseChange(e.target.value)}
+              className="min-w-[220px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+            >
+              <option value="">Ombor tanlang</option>
+              {warehouses.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name}
+                </option>
+              ))}
+            </select>
+
             <form onSubmit={handleSearch} className="flex gap-2">
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tovar, brand yoki barcode qidiring"
-                className="w-full min-w-[280px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                placeholder="Tovar yoki brand qidiring"
+                className="w-full min-w-[260px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
               />
               <button
                 type="submit"
@@ -278,14 +530,10 @@ export default function ProductsPage() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-slate-500">
-                  <th className="pb-3 font-semibold">Rasm</th>
+                  <th className="w-[280px] pb-3 font-semibold">Rasmlar</th>
                   <th className="pb-3 font-semibold">Nomi</th>
                   <th className="pb-3 font-semibold">Kategoriya</th>
-                  <th className="pb-3 font-semibold">Brend</th>
-                  <th className="pb-3 font-semibold">Jinsi</th>
-                  <th className="pb-3 font-semibold">Mavsumi</th>
-                  <th className="pb-3 font-semibold">Variantlar</th>
-                  <th className="pb-3 font-semibold">Qoldiq</th>
+                  <th className="w-[220px] pb-3 font-semibold">Razmerlar</th>
                   <th className="pb-3 font-semibold">Holati</th>
                   <th className="pb-3 text-right font-semibold">Amal</th>
                 </tr>
@@ -295,49 +543,78 @@ export default function ProductsPage() {
                 {rows.length > 0 ? (
                   rows.map((item) => (
                     <tr key={item.id} className="border-b border-slate-50 align-top">
-                      <td className="py-3">
-                        <div className="flex min-w-[170px] items-start gap-3">
-                          <div className="h-16 w-16 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                            {item.imageUrl ? (
-                              <img
-                                src={`${API_BASE_URL}${item.imageUrl}`}
-                                alt={item.name}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
-                                Rasm yo‘q
+                      <td className="py-3 align-top">
+                        <div className="w-[255px] space-y-3">
+                          {(item.images || []).length > 0 ? (
+                            <div className="max-h-[240px] overflow-y-auto pr-1">
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {item.images.map((image) => (
+                                  <div
+                                    key={image.id}
+                                    className="rounded-2xl border border-slate-200 p-1"
+                                  >
+                                    <img
+                                      src={`${API_BASE_URL}${image.imageUrl}`}
+                                      alt={item.name}
+                                      className={`h-[74px] w-full cursor-zoom-in rounded-xl object-cover ${
+                                        image.isPrimary ? 'ring-2 ring-blue-300' : ''
+                                      }`}
+                                      onClick={() => {
+                                        setPreviewImage(`${API_BASE_URL}${image.imageUrl}`);
+                                        setPreviewTitle(item.name);
+                                        setPreviewOpen(true);
+                                      }}
+                                    />
+
+                                    <div className="mt-1 flex justify-between gap-1">
+                                      {!image.isPrimary ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSetPrimary(image.id)}
+                                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition hover:bg-amber-100"
+                                          title="Asosiy qilish"
+                                        >
+                                          <Star size={12} />
+                                        </button>
+                                      ) : (
+                                        <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-600">
+                                          <Star size={12} />
+                                        </div>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteImage(image.id)}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+                                        title="Rasmni o‘chirish"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            )}
-                          </div>
+                            </div>
+                          ) : (
+                            <div className="flex h-20 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-[10px] text-slate-400">
+                              Rasm yo‘q
+                            </div>
+                          )}
 
-                          <div className="flex flex-col gap-2">
-                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                              <ImagePlus size={14} />
-                              Rasm
-                              <input
-                                type="file"
-                                accept="image/png,image/jpeg,image/jpg,image/webp"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) handleUploadImage(item.id, file);
-                                  e.target.value = '';
-                                }}
-                              />
-                            </label>
-
-                            {item.imageUrl ? (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteImage(item.id)}
-                                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-100"
-                              >
-                                <Trash2 size={14} />
-                                O‘chirish
-                              </button>
-                            ) : null}
-                          </div>
+                          <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                            <ImagePlus size={14} />
+                            Rasm qo‘shish
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/jpg,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleUploadImage(item.id, file);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
                         </div>
                       </td>
 
@@ -351,34 +628,33 @@ export default function ProductsPage() {
                       </td>
 
                       <td className="py-3 text-slate-700">{item.category?.name || '-'}</td>
-                      <td className="py-3 text-slate-700">{item.brand || '-'}</td>
-                      <td className="py-3 text-slate-700">{item.gender || '-'}</td>
-                      <td className="py-3 text-slate-700">{item.season || '-'}</td>
 
                       <td className="py-3 text-slate-700">
-                        <div className="space-y-1">
+                        <div className="max-h-[240px] w-[190px] overflow-y-auto pr-1">
                           {item.variants?.length ? (
-                            item.variants.map((variant) => (
-                              <div
-                                key={variant.id}
-                                className="rounded-xl bg-slate-50 px-3 py-2 text-xs"
+                            <DndContext
+                              sensors={sensors}
+                              collisionDetection={closestCenter}
+                              onDragEnd={(event) => handleVariantDragEnd(item, event)}
+                            >
+                              <SortableContext
+                                items={item.variants.map((variant) => variant.id)}
+                                strategy={verticalListSortingStrategy}
                               >
-                                <div className="font-semibold text-slate-800">
-                                  {variant.size?.name || '-'}
+                                <div className="space-y-2">
+                                  {item.variants.map((variant) => (
+                                    <SortableVariantItem
+                                      key={variant.id}
+                                      variant={variant}
+                                    />
+                                  ))}
                                 </div>
-                                <div className="text-slate-500">
-                                  Barcode: {variant.barcode || '-'}
-                                </div>
-                              </div>
-                            ))
+                              </SortableContext>
+                            </DndContext>
                           ) : (
                             <span className="text-xs text-slate-400">Variant yo‘q</span>
                           )}
                         </div>
-                      </td>
-
-                      <td className="py-3 font-semibold text-slate-900">
-                        {Number(item.totalStock || 0).toLocaleString('uz-UZ')}
                       </td>
 
                       <td className="py-3">
@@ -396,11 +672,23 @@ export default function ProductsPage() {
                       <td className="py-3">
                         <div className="flex justify-end gap-2">
                           <button
+                            type="button"
+                            onClick={() => {
+                              setDetailsProduct(item);
+                              setDetailsOpen(true);
+                            }}
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <Eye size={14} />
+                            Ko‘rish
+                          </button>
+
+                          <button
                             onClick={() => openVariantModal(item)}
                             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                           >
                             <ScanLine size={14} />
-                            Variant
+                            Razmer
                           </button>
 
                           <button
@@ -416,7 +704,7 @@ export default function ProductsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="10" className="py-12 text-center text-sm text-slate-500">
+                    <td colSpan="6" className="py-12 text-center text-sm text-slate-500">
                       Hozircha tovarlar yo‘q
                     </td>
                   </tr>
@@ -436,8 +724,6 @@ export default function ProductsPage() {
         saving={savingProduct}
         editingItem={editingItem}
         categories={categories}
-        onUploadImage={handleUploadImage}
-        onDeleteImage={handleDeleteImage}
       />
 
       <VariantModal
@@ -449,6 +735,32 @@ export default function ProductsPage() {
         saving={savingVariant}
         sizes={sizes}
         product={variantProduct}
+      />
+
+      <ProductDetailsModal
+        open={detailsOpen}
+        onClose={() => {
+          setDetailsOpen(false);
+          setDetailsProduct(null);
+        }}
+        product={detailsProduct}
+        warehouseName={warehouses.find((w) => w.id === warehouseId)?.name || ''}
+        onPreviewImage={(url, title) => {
+          setPreviewImage(url);
+          setPreviewTitle(title);
+          setPreviewOpen(true);
+        }}
+      />
+
+      <ImagePreviewModal
+        open={previewOpen}
+        imageUrl={previewImage}
+        title={previewTitle}
+        onClose={() => {
+          setPreviewOpen(false);
+          setPreviewImage('');
+          setPreviewTitle('');
+        }}
       />
     </div>
   );

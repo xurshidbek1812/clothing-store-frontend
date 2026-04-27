@@ -146,7 +146,7 @@ const Login = () => {
                 </div>
                 <input
                   type="text"
-                  placeholder="masalan: admin"
+                  placeholder="login"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full rounded-2xl border border-slate-700/50 bg-slate-900/50 py-4 pl-12 pr-4 text-white placeholder-slate-500 outline-none transition-all focus:border-blue-500/50 focus:bg-slate-900/80 focus:ring-4 focus:ring-blue-500/10"

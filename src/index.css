@@ -20,3 +20,17 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .print\:block {
+    display: block !important;
+  }
+}

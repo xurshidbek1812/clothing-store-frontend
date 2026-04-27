@@ -1,6 +1,3 @@
-import { ImagePlus, Trash2 } from 'lucide-react';
-import { API_BASE_URL } from '../../../lib/api';
-
 export default function ProductModal({
   open,
   onClose,
@@ -10,8 +7,6 @@ export default function ProductModal({
   saving,
   editingItem,
   categories = [],
-  onUploadImage,
-  onDeleteImage,
 }) {
   if (!open) return null;
 
@@ -37,62 +32,6 @@ export default function ProductModal({
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4 px-6 py-5">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="mb-3 text-sm font-semibold text-slate-700">Tovar rasmi</p>
-
-            <div className="flex items-start gap-4">
-              <div className="h-24 w-24 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                {editingItem?.imageUrl ? (
-                  <img
-                    src={`${API_BASE_URL}${editingItem.imageUrl}`}
-                    alt={editingItem.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                    Rasm yo‘q
-                  </div>
-                )}
-              </div>
-
-              {editingItem ? (
-                <div className="flex flex-col gap-2">
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-                    <ImagePlus size={16} />
-                    Rasm yuklash
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/jpg,image/webp"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file && onUploadImage) {
-                          onUploadImage(editingItem.id, file);
-                        }
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-
-                  {editingItem.imageUrl ? (
-                    <button
-                      type="button"
-                      onClick={() => onDeleteImage?.(editingItem.id)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
-                    >
-                      <Trash2 size={16} />
-                      Rasmni o‘chirish
-                    </button>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500">
-                  Avval tovarni yarating, keyin rasm yuklaysiz
-                </p>
-              )}
-            </div>
-          </div>
-
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">

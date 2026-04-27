@@ -8,22 +8,47 @@ import RoleRoute from './components/RoleRoute';
 
 import Layout from './components/Layout';
 import Login from './pages/Login';
-
 import Dashboard from './pages/Dashboard';
+
+import CashboxTransfers from './pages/kassalar/CashboxTransferPage';
+import OutToOtherCashbox from './pages/kassalar/OutToOtherCashboxPage';
+import InFromOtherCashbox from './pages/kassalar/InFromOtherCashboxPage';
+import Expenses from './pages/kassalar/ExpensesPage';
+import CashboxesBalance from './pages/kassalar/CashboxesBalancePage';
+import CashExchange from './pages/kassalar/CashExchangePage';
+
 import CashSalePage from './pages/savdo/CashSalePage';
+import CreditSalePage from './pages/savdo/CreditSalePage';
+import CustomerBalancesPage from './pages/savdo/CustomerBalancesPage';
 import SalesHistoryPage from './pages/savdo/SalesHistoryPage';
-import Settings from './pages/Settings';
-import Users from './pages/Users';
+import SaleReturnsPage from './pages/savdo/SaleReturnsPage';
+
+import Users from './pages/settings/Users';
+import ProfilePage from './pages/settings/ProfilePage';
+import StoresPage from './pages/settings/StoresPage';
 import ProductsPage from './pages/tovarlar/ProductsPage';
+
+import PrintLabelPage from './pages/labels/PrintLabelsPage'
 
 import CategoriesPage from './pages/references/CategoriesPage';
 import ExpenseCategoriesPage from './pages/references/ExpenseCategoriesPage';
 import SizesPage from './pages/references/SizesPage';
 import CurrenciesPage from './pages/references/CurrenciesPage';
+import WarehousesPage from './pages/references/WarehousesPage';
+import CashboxesPage from './pages/references/CashboxesPage';
 
 import SuppliersPage from './pages/taminotchilar/SuppliersPage';
 import SupplierBalancesPage from './pages/taminotchilar/SupplierBalancesPage';
+
+import InFromOtherStore from './pages/ombor/InFromOtherStorePage';
+import OutToOtherStore from './pages/ombor/OutToOtherStorePage';
 import SupplierInPage from './pages/ombor/SupplierInPage';
+import SupplierReturn from './pages/ombor/SupplierReturnsPage';
+import WarehouseTransfersPage from './pages/ombor/WarehouseTransfersPage';
+import StockBalancesPage from './pages/ombor/StockBalancesPage';
+import Inventory from './pages/ombor/InventoryCountPage';
+import InventoryHistory from './pages/ombor/InventoryHistoryPage';
+
 
 function PlaceholderPage({ title }) {
   return (
@@ -52,37 +77,36 @@ function App() {
               <Route index element={<Dashboard />} />
 
               {/* Kassa */}
-              <Route path="cash/transfer-out" element={<PlaceholderPage title="Boshqa kassaga chiqim" />} />
-              <Route path="cash/transfer-in" element={<PlaceholderPage title="Boshqa kassadan kirim" />} />
-              <Route path="cash/expense" element={<PlaceholderPage title="Xarajatga pul chiqim" />} />
-              <Route path="cash/transactions" element={<PlaceholderPage title="Barcha kassa amaliyotlari" />} />
-              <Route path="cash/manage" element={<PlaceholderPage title="Kassalarni boshqarish" />} />
-              <Route path="cash/balances" element={<PlaceholderPage title="Kassalar qoldig'i" />} />
-              <Route path="cash/exchange" element={<PlaceholderPage title="Valyuta ayirboshlash" />} />
+              <Route path="cash/transfer-out" element={<OutToOtherCashbox />} />
+              <Route path="cash/transfer-in" element={<InFromOtherCashbox />} />
+              <Route path="cash/expense" element={<Expenses />} />
+              <Route path="cash/transactions" element={<CashboxTransfers />} />
+              <Route path="cash/balances" element={<CashboxesBalance />} />
+              <Route path="cash/exchange" element={<CashExchange />} />
 
               {/* Savdo */}
               <Route path="sales/cash" element={<CashSalePage />} />
-              <Route path="sales/credit" element={<PlaceholderPage title="Nasiya savdo" />} />
+              <Route path="sales/credit" element={<CreditSalePage />} />
+              <Route path="customers/balances" element={<CustomerBalancesPage />} />
               <Route path="sales/history" element={<SalesHistoryPage />} />
-              <Route path="sales/returns" element={<PlaceholderPage title="Tovar qaytarish" />} />
+              <Route path="sales/returns" element={<SaleReturnsPage />} />
 
               {/* Ombor */}
-              <Route path="warehouse/movements" element={<PlaceholderPage title="Barcha ombor amaliyotlari" />} />
-              <Route path="warehouse/in-from-warehouse" element={<PlaceholderPage title="Boshqa ombordan kirim" />} />
-              <Route path="warehouse/out-to-warehouse" element={<PlaceholderPage title="Boshqa omborga chiqim" />} />
+              <Route path="warehouse/movements" element={<WarehouseTransfersPage />} />
+              <Route path="warehouse/in-from-warehouse" element={<InFromOtherStore />} />
+              <Route path="warehouse/out-to-warehouse" element={<OutToOtherStore />} />
               <Route path="warehouse/in-from-supplier" element={<SupplierInPage />} />
-              <Route path="warehouse/return-to-supplier" element={<PlaceholderPage title="Taminotchiga tovar qaytarish" />} />
-              <Route path="warehouse/in-from-customer" element={<PlaceholderPage title="Mijozdan tovar kirimi" />} />
-              <Route path="warehouse/balances" element={<PlaceholderPage title="Tovar qoldig'i" />} />
-              <Route path="warehouse/count" element={<PlaceholderPage title="Sanoq" />} />
-              <Route path="warehouse/count-history" element={<PlaceholderPage title="Sanoq tarixi" />} />
+              <Route path="warehouse/return-to-supplier" element={<SupplierReturn />} />
+              <Route path="warehouse/balances" element={<StockBalancesPage />} />
+              <Route path="warehouse/count" element={<Inventory />} />
+              <Route path="warehouse/count-history" element={<InventoryHistory />} />
 
               {/* Hisob-kitoblar */}
               <Route path="settlements/suppliers" element={<SuppliersPage />} />
               <Route path="settlements/supplier-balances" element={<SupplierBalancesPage />} />
 
               {/* Narx yorlig'i */}
-              <Route path="labels/print" element={<PlaceholderPage title="Narx yorlig'i chop etish" />} />
+              <Route path="labels/print" element={<PrintLabelPage />} />
 
               {/* Hisobotlar */}
               <Route path="reports" element={<PlaceholderPage title="Hisobotlar ro'yxati" />} />
@@ -94,18 +118,18 @@ function App() {
                 <Route path="references/sizes" element={<SizesPage />} />
                 <Route path="references/currencies" element={<CurrenciesPage />} />
                 <Route path="references/products" element={<ProductsPage />} />
-                <Route path="references/warehouses" element={<PlaceholderPage title="Omborlar" />} />
-                <Route path="references/cashboxes" element={<PlaceholderPage title="Kassalar" />} />
+                <Route path="references/warehouses" element={<WarehousesPage />} />
+                <Route path="references/cashboxes" element={<CashboxesPage />} />
                 <Route path="references/suppliers" element={<SuppliersPage />} />
               </Route>
 
               {/* Sozlamalar */}
-              <Route path="settings/profile" element={<Settings />} />
               <Route path="settings/employees" element={<Users />} />
+              <Route path="settings/shops" element={<StoresPage />} />
+              <Route path="settings/profile" element={<ProfilePage />} />
 
               {/* Qisqa route'lar */}
               <Route path="users" element={<Users />} />
-              <Route path="settings" element={<Settings />} />
             </Route>
           </Route>
 
